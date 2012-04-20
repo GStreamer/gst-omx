@@ -434,7 +434,7 @@ gst_omx_component_new (GstObject * parent, const gchar * core_name,
   comp->last_error = OMX_ErrorNone;
 
   /* Set component role if any */
-  if (component_role) {
+  if (component_role && !(hacks & GST_OMX_HACK_NO_COMPONENT_ROLE)) {
     OMX_PARAM_COMPONENTROLETYPE param;
 
     GST_OMX_INIT_STRUCT (&param);
@@ -1966,6 +1966,8 @@ gst_omx_parse_hacks (gchar ** hacks)
       hacks_flags |= GST_OMX_HACK_NO_EMPTY_EOS_BUFFER;
     else if (g_str_equal (*hacks, "drain-may-not-return"))
       hacks_flags |= GST_OMX_HACK_DRAIN_MAY_NOT_RETURN;
+    else if (g_str_equal (*hacks, "no-component-role"))
+      hacks_flags |= GST_OMX_HACK_NO_COMPONENT_ROLE;
     else
       GST_WARNING ("Unknown hack: %s", *hacks);
     hacks++;
