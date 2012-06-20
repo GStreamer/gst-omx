@@ -206,11 +206,32 @@ dnl *** plug-ins to include ***
 dnl these are all the gst plug-ins, compilable without additional libs
 AG_GST_CHECK_PLUGIN(omx)
 
+dnl check for gstreamer video base classes
+ac_cflags_save="$CFLAGS"
+ac_cppflags_save="$CPPFLAGS"
+CFLAGS="$CFLAGS $GST_PLUGINS_BASE_CFLAGS $GST_BASE_CFLAGS $GST_CFLAGS"
+CPPFLAGS="$CPPFLAGS $GST_PLUGINS_BASE_CFLAGS $GST_BASE_CFLAGS $GST_CFLAGS"
+
+AC_CHECK_HEADER([gst/video/gstvideodecoder.h], [HAVE_VIDEO_BASE_CLASSES="yes"],
+  [HAVE_VIDEO_BASE_CLASSES="no"], [AC_INCLUDES_DEFAULT])
+
+CFLAGS="$ac_cflags_save"
+CPPFLAGS="$ac_cppflags_save"
+
+if test "x$HAVE_VIDEO_BASE_CLASSES" = "xyes"
+then
+  AC_MSG_NOTICE([GStreamer base classes for video decoding/encoding found])
+  AC_DEFINE_UNQUOTED(HAVE_VIDEO_BASE_CLASSES, 1,
+    [defined if GStreamer base classes for video decoding/encoding are present])
+else
+  AC_MSG_NOTICE([using local copy of GStreamer base classes for video decoding/encoding])
+fi
+AM_CONDITIONAL(USE_LOCAL_VIDEO_BASE_CLASSES, test "x$HAVE_VIDEO_BASE_CLASSES" = "xno")
+
 dnl check for gstreamer core features (subsystems)
 dnl FIXME: this assumes srcdir == builddir for uninstalled setups
 GST_CONFIGPATH=`$PKG_CONFIG --variable=includedir gstreamer-0.10`"/gst/gstconfig.h"
 AG_GST_PARSE_SUBSYSTEM_DISABLES($GST_CONFIGPATH)
-AM_CONDITIONAL(USE_XML, test $GST_DISABLE_XML != "1")
 
 dnl *** finalize CFLAGS, LDFLAGS, LIBS
 

@@ -30,7 +30,6 @@ GST_DEBUG_CATEGORY_STATIC (gst_omx_aac_enc_debug_category);
 #define GST_CAT_DEFAULT gst_omx_aac_enc_debug_category
 
 /* prototypes */
-static void gst_omx_aac_enc_finalize (GObject * object);
 static void gst_omx_aac_enc_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_omx_aac_enc_get_property (GObject * object, guint prop_id,
@@ -129,7 +128,6 @@ gst_omx_aac_enc_class_init (GstOMXAACEncClass * klass)
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstOMXAudioEncClass *audioenc_class = GST_OMX_AUDIO_ENC_CLASS (klass);
 
-  gobject_class->finalize = gst_omx_aac_enc_finalize;
   gobject_class->set_property = gst_omx_aac_enc_set_property;
   gobject_class->get_property = gst_omx_aac_enc_get_property;
 
@@ -172,14 +170,6 @@ gst_omx_aac_enc_init (GstOMXAACEnc * self, GstOMXAACEncClass * klass)
   self->bitrate = DEFAULT_BITRATE;
   self->aac_tools = DEFAULT_AAC_TOOLS;
   self->aac_er_tools = DEFAULT_AAC_ER_TOOLS;
-}
-
-static void
-gst_omx_aac_enc_finalize (GObject * object)
-{
-  /* GstOMXAACEnc *self = GST_OMX_AAC_ENC (object); */
-
-  G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static void

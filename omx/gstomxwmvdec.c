@@ -30,11 +30,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_omx_wmv_dec_debug_category);
 #define GST_CAT_DEFAULT gst_omx_wmv_dec_debug_category
 
 /* prototypes */
-static void gst_omx_wmv_dec_finalize (GObject * object);
 static gboolean gst_omx_wmv_dec_is_format_change (GstOMXVideoDec * dec,
-    GstOMXPort * port, GstVideoState * state);
+    GstOMXPort * port, GstVideoCodecState * state);
 static gboolean gst_omx_wmv_dec_set_format (GstOMXVideoDec * dec,
-    GstOMXPort * port, GstVideoState * state);
+    GstOMXPort * port, GstVideoCodecState * state);
 
 enum
 {
@@ -71,10 +70,7 @@ gst_omx_wmv_dec_base_init (gpointer g_class)
 static void
 gst_omx_wmv_dec_class_init (GstOMXWMVDecClass * klass)
 {
-  GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstOMXVideoDecClass *videodec_class = GST_OMX_VIDEO_DEC_CLASS (klass);
-
-  gobject_class->finalize = gst_omx_wmv_dec_finalize;
 
   videodec_class->is_format_change =
       GST_DEBUG_FUNCPTR (gst_omx_wmv_dec_is_format_change);
@@ -88,24 +84,16 @@ gst_omx_wmv_dec_init (GstOMXWMVDec * self, GstOMXWMVDecClass * klass)
 {
 }
 
-static void
-gst_omx_wmv_dec_finalize (GObject * object)
-{
-  /* GstOMXWMVDec *self = GST_OMX_WMV_DEC (object); */
-
-  G_OBJECT_CLASS (parent_class)->finalize (object);
-}
-
 static gboolean
 gst_omx_wmv_dec_is_format_change (GstOMXVideoDec * dec,
-    GstOMXPort * port, GstVideoState * state)
+    GstOMXPort * port, GstVideoCodecState * state)
 {
   return FALSE;
 }
 
 static gboolean
 gst_omx_wmv_dec_set_format (GstOMXVideoDec * dec, GstOMXPort * port,
-    GstVideoState * state)
+    GstVideoCodecState * state)
 {
   gboolean ret;
   OMX_PARAM_PORTDEFINITIONTYPE port_def;

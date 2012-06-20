@@ -30,13 +30,12 @@ GST_DEBUG_CATEGORY_STATIC (gst_omx_h264_enc_debug_category);
 #define GST_CAT_DEFAULT gst_omx_h264_enc_debug_category
 
 /* prototypes */
-static void gst_omx_h264_enc_finalize (GObject * object);
 static gboolean gst_omx_h264_enc_set_format (GstOMXVideoEnc * enc,
-    GstOMXPort * port, GstVideoState * state);
+    GstOMXPort * port, GstVideoCodecState * state);
 static GstCaps *gst_omx_h264_enc_get_caps (GstOMXVideoEnc * enc,
-    GstOMXPort * port, GstVideoState * state);
+    GstOMXPort * port, GstVideoCodecState * state);
 static GstFlowReturn gst_omx_h264_enc_handle_output_frame (GstOMXVideoEnc *
-    self, GstOMXPort * port, GstOMXBuffer * buf, GstVideoFrame * frame);
+    self, GstOMXPort * port, GstOMXBuffer * buf, GstVideoCodecFrame * frame);
 
 enum
 {
@@ -73,10 +72,7 @@ gst_omx_h264_enc_base_init (gpointer g_class)
 static void
 gst_omx_h264_enc_class_init (GstOMXH264EncClass * klass)
 {
-  GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstOMXVideoEncClass *videoenc_class = GST_OMX_VIDEO_ENC_CLASS (klass);
-
-  gobject_class->finalize = gst_omx_h264_enc_finalize;
 
   videoenc_class->set_format = GST_DEBUG_FUNCPTR (gst_omx_h264_enc_set_format);
   videoenc_class->get_caps = GST_DEBUG_FUNCPTR (gst_omx_h264_enc_get_caps);
@@ -92,17 +88,9 @@ gst_omx_h264_enc_init (GstOMXH264Enc * self, GstOMXH264EncClass * klass)
 {
 }
 
-static void
-gst_omx_h264_enc_finalize (GObject * object)
-{
-  /* GstOMXH264Enc *self = GST_OMX_H264_VIDEO_ENC (object); */
-
-  G_OBJECT_CLASS (parent_class)->finalize (object);
-}
-
 static gboolean
 gst_omx_h264_enc_set_format (GstOMXVideoEnc * enc, GstOMXPort * port,
-    GstVideoState * state)
+    GstVideoCodecState * state)
 {
   GstOMXH264Enc *self = GST_OMX_H264_ENC (enc);
   GstCaps *peercaps;
@@ -110,17 +98,16 @@ gst_omx_h264_enc_set_format (GstOMXVideoEnc * enc, GstOMXPort * port,
   OMX_VIDEO_AVCLEVELTYPE level = OMX_VIDEO_AVCLevel11;
   OMX_VIDEO_PARAM_PROFILELEVELTYPE param;
   OMX_ERRORTYPE err;
+  const gchar *profile_string, *level_string;
 
-  peercaps = gst_pad_peer_get_caps (GST_BASE_VIDEO_CODEC_SRC_PAD (enc));
+  peercaps = gst_pad_peer_get_caps (GST_VIDEO_ENCODER_SRC_PAD (enc));
   if (peercaps) {
     GstStructure *s;
     GstCaps *intersection;
-    const gchar *profile_string, *level_string;
 
     intersection =
         gst_caps_intersect (peercaps,
-        gst_pad_get_pad_template_caps (GST_BASE_VIDEO_CODEC_SRC_PAD (enc)));
-    gst_caps_unref (peercaps);
+        gst_pad_get_pad_template_caps (GST_VIDEO_ENCODER_SRC_PAD (enc)));
     if (gst_caps_is_empty (intersection)) {
       gst_caps_unref (intersection);
       GST_ERROR_OBJECT (self, "Empty caps");
@@ -145,8 +132,7 @@ gst_omx_h264_enc_set_format (GstOMXVideoEnc * enc, GstOMXPort * port,
       } else if (g_str_equal (profile_string, "high-4:4:4")) {
         profile = OMX_VIDEO_AVCProfileHigh444;
       } else {
-        GST_ERROR_OBJECT (self, "Unsupported profile %s", profile_string);
-        return FALSE;
+        goto unsupported_profile;
       }
     }
     level_string = gst_structure_get_string (s, "level");
@@ -184,10 +170,10 @@ gst_omx_h264_enc_set_format (GstOMXVideoEnc * enc, GstOMXPort * port,
       } else if (g_str_equal (level_string, "5.1")) {
         level = OMX_VIDEO_AVCLevel51;
       } else {
-        GST_ERROR_OBJECT (self, "Unsupported level %s", level_string);
-        return FALSE;
+        goto unsupported_level;
       }
     }
+    gst_caps_unref (peercaps);
   }
 
   GST_OMX_INIT_STRUCT (&param);
@@ -209,11 +195,21 @@ gst_omx_h264_enc_set_format (GstOMXVideoEnc * enc, GstOMXPort * port,
   }
 
   return TRUE;
+
+unsupported_profile:
+  gst_caps_unref (peercaps);
+  GST_ERROR_OBJECT (self, "Unsupported profile %s", profile_string);
+  return FALSE;
+
+unsupported_level:
+  gst_caps_unref (peercaps);
+  GST_ERROR_OBJECT (self, "Unsupported level %s", level_string);
+  return FALSE;
 }
 
 static GstCaps *
 gst_omx_h264_enc_get_caps (GstOMXVideoEnc * enc, GstOMXPort * port,
-    GstVideoState * state)
+    GstVideoCodecState * state)
 {
   GstOMXH264Enc *self = GST_OMX_H264_ENC (enc);
   GstCaps *caps;
@@ -221,16 +217,7 @@ gst_omx_h264_enc_get_caps (GstOMXVideoEnc * enc, GstOMXPort * port,
   OMX_VIDEO_PARAM_PROFILELEVELTYPE param;
   const gchar *profile, *level;
 
-  caps =
-      gst_caps_new_simple ("video/x-h264", "width", G_TYPE_INT, state->width,
-      "height", G_TYPE_INT, state->height, NULL);
-
-  if (state->fps_n != 0)
-    gst_caps_set_simple (caps, "framerate", GST_TYPE_FRACTION, state->fps_n,
-        state->fps_d, NULL);
-  if (state->par_n != 1 || state->par_d != 1)
-    gst_caps_set_simple (caps, "pixel-aspect-ratio", GST_TYPE_FRACTION,
-        state->par_n, state->par_d, NULL);
+  caps = gst_caps_new_simple ("video/x-h264", NULL);
 
   GST_OMX_INIT_STRUCT (&param);
   param.nPortIndex = GST_OMX_VIDEO_ENC (self)->out_port->index;
@@ -331,7 +318,7 @@ gst_omx_h264_enc_get_caps (GstOMXVideoEnc * enc, GstOMXPort * port,
 
 static GstFlowReturn
 gst_omx_h264_enc_handle_output_frame (GstOMXVideoEnc * self, GstOMXPort * port,
-    GstOMXBuffer * buf, GstVideoFrame * frame)
+    GstOMXBuffer * buf, GstVideoCodecFrame * frame)
 {
   if (buf->omx_buf->nFlags & OMX_BUFFERFLAG_CODECCONFIG) {
     /* The codec data is SPS/PPS with a startcode => bytestream stream format
@@ -341,6 +328,7 @@ gst_omx_h264_enc_handle_output_frame (GstOMXVideoEnc * self, GstOMXPort * port,
     if (buf->omx_buf->nFilledLen >= 4 &&
         GST_READ_UINT32_BE (buf->omx_buf->pBuffer +
             buf->omx_buf->nOffset) == 0x00000001) {
+      GList *l = NULL;
       GstBuffer *hdrs;
 
       GST_DEBUG_OBJECT (self, "got codecconfig in byte-stream format");
@@ -350,8 +338,8 @@ gst_omx_h264_enc_handle_output_frame (GstOMXVideoEnc * self, GstOMXPort * port,
       memcpy (GST_BUFFER_DATA (hdrs),
           buf->omx_buf->pBuffer + buf->omx_buf->nOffset,
           buf->omx_buf->nFilledLen);
-      gst_base_video_encoder_set_headers (GST_BASE_VIDEO_ENCODER (self), hdrs);
-      gst_buffer_unref (hdrs);
+      l = g_list_append (l, hdrs);
+      gst_video_encoder_set_headers (GST_VIDEO_ENCODER (self), l);
     }
   }
 

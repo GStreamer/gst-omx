@@ -41,7 +41,7 @@ static gboolean gst_omx_audio_enc_start (GstAudioEncoder * encoder);
 static gboolean gst_omx_audio_enc_stop (GstAudioEncoder * encoder);
 static gboolean gst_omx_audio_enc_set_format (GstAudioEncoder * encoder,
     GstAudioInfo * info);
-static gboolean gst_omx_audio_enc_event (GstAudioEncoder * encoder,
+static gboolean gst_omx_audio_enc_sink_event (GstAudioEncoder * encoder,
     GstEvent * event);
 static GstFlowReturn gst_omx_audio_enc_handle_frame (GstAudioEncoder *
     encoder, GstBuffer * buffer);
@@ -217,7 +217,8 @@ gst_omx_audio_enc_class_init (GstOMXAudioEncClass * klass)
       GST_DEBUG_FUNCPTR (gst_omx_audio_enc_set_format);
   audio_encoder_class->handle_frame =
       GST_DEBUG_FUNCPTR (gst_omx_audio_enc_handle_frame);
-  audio_encoder_class->event = GST_DEBUG_FUNCPTR (gst_omx_audio_enc_event);
+  audio_encoder_class->event =
+      GST_DEBUG_FUNCPTR (gst_omx_audio_enc_sink_event);
 
   klass->default_sink_template_caps = "audio/x-raw-int, "
       "rate = (int) [ 1, MAX ], "
@@ -882,6 +883,7 @@ gst_omx_audio_enc_handle_frame (GstAudioEncoder * encoder, GstBuffer * inbuf)
   GstOMXAcquireBufferReturn acq_ret = GST_OMX_ACQUIRE_BUFFER_ERROR;
   GstOMXAudioEnc *self;
   GstOMXBuffer *buf;
+  gsize size;
   guint offset = 0;
   GstClockTime timestamp, duration, timestamp_offset = 0;
 
@@ -907,7 +909,8 @@ gst_omx_audio_enc_handle_frame (GstAudioEncoder * encoder, GstBuffer * inbuf)
   timestamp = GST_BUFFER_TIMESTAMP (inbuf);
   duration = GST_BUFFER_DURATION (inbuf);
 
-  while (offset < GST_BUFFER_SIZE (inbuf)) {
+  size = GST_BUFFER_SIZE (inbuf);
+  while (offset < size) {
     /* Make sure to release the base class stream lock, otherwise
      * _loop() can't call _finish_frame() and we might block forever
      * because no input buffers are released */
@@ -947,8 +950,7 @@ gst_omx_audio_enc_handle_frame (GstAudioEncoder * encoder, GstBuffer * inbuf)
     /* Copy the buffer content in chunks of size as requested
      * by the port */
     buf->omx_buf->nFilledLen =
-        MIN (GST_BUFFER_SIZE (inbuf) - offset,
-        buf->omx_buf->nAllocLen - buf->omx_buf->nOffset);
+        MIN (size - offset, buf->omx_buf->nAllocLen - buf->omx_buf->nOffset);
     memcpy (buf->omx_buf->pBuffer + buf->omx_buf->nOffset,
         GST_BUFFER_DATA (inbuf) + offset, buf->omx_buf->nFilledLen);
 
@@ -956,7 +958,7 @@ gst_omx_audio_enc_handle_frame (GstAudioEncoder * encoder, GstBuffer * inbuf)
      * in multiple chunks */
     if (offset != 0 && duration != GST_CLOCK_TIME_NONE) {
       timestamp_offset =
-          gst_util_uint64_scale (offset, duration, GST_BUFFER_SIZE (inbuf));
+          gst_util_uint64_scale (offset, duration, size);
     }
 
     if (timestamp != GST_CLOCK_TIME_NONE) {
@@ -967,8 +969,7 @@ gst_omx_audio_enc_handle_frame (GstAudioEncoder * encoder, GstBuffer * inbuf)
     }
     if (duration != GST_CLOCK_TIME_NONE) {
       buf->omx_buf->nTickCount =
-          gst_util_uint64_scale (buf->omx_buf->nFilledLen, duration,
-          GST_BUFFER_SIZE (inbuf));
+          gst_util_uint64_scale (buf->omx_buf->nFilledLen, duration, size);
       self->last_upstream_ts += duration;
     }
 
@@ -1009,7 +1010,7 @@ reconfigure_error:
 }
 
 static gboolean
-gst_omx_audio_enc_event (GstAudioEncoder * encoder, GstEvent * event)
+gst_omx_audio_enc_sink_event (GstAudioEncoder * encoder, GstEvent * event)
 {
   GstOMXAudioEnc *self;
   GstOMXAudioEncClass *klass;
