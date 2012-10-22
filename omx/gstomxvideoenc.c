@@ -78,6 +78,8 @@ static GstStateChangeReturn
 gst_omx_video_enc_change_state (GstElement * element,
     GstStateChange transition);
 
+static gboolean gst_omx_video_enc_open (GstVideoEncoder * encoder);
+static gboolean gst_omx_video_enc_close (GstVideoEncoder * encoder);
 static gboolean gst_omx_video_enc_start (GstVideoEncoder * encoder);
 static gboolean gst_omx_video_enc_stop (GstVideoEncoder * encoder);
 static gboolean gst_omx_video_enc_set_format (GstVideoEncoder * encoder,
@@ -305,6 +307,8 @@ gst_omx_video_enc_class_init (GstOMXVideoEncClass * klass)
   element_class->change_state =
       GST_DEBUG_FUNCPTR (gst_omx_video_enc_change_state);
 
+  video_encoder_class->open = GST_DEBUG_FUNCPTR (gst_omx_video_enc_open);
+  video_encoder_class->close = GST_DEBUG_FUNCPTR (gst_omx_video_enc_close);
   video_encoder_class->start = GST_DEBUG_FUNCPTR (gst_omx_video_enc_start);
   video_encoder_class->stop = GST_DEBUG_FUNCPTR (gst_omx_video_enc_stop);
   video_encoder_class->reset = GST_DEBUG_FUNCPTR (gst_omx_video_enc_reset);
@@ -336,8 +340,9 @@ gst_omx_video_enc_init (GstOMXVideoEnc * self, GstOMXVideoEncClass * klass)
 }
 
 static gboolean
-gst_omx_video_enc_open (GstOMXVideoEnc * self)
+gst_omx_video_enc_open (GstVideoEncoder * encoder)
 {
+  GstOMXVideoEnc *self = GST_OMX_VIDEO_ENC (encoder);
   GstOMXVideoEncClass *klass = GST_OMX_VIDEO_ENC_GET_CLASS (self);
 
   self->component =
@@ -473,8 +478,10 @@ gst_omx_video_enc_shutdown (GstOMXVideoEnc * self)
 }
 
 static gboolean
-gst_omx_video_enc_close (GstOMXVideoEnc * self)
+gst_omx_video_enc_close (GstVideoEncoder * encoder)
 {
+  GstOMXVideoEnc *self = GST_OMX_VIDEO_ENC (encoder);
+
   GST_DEBUG_OBJECT (self, "Closing encoder");
 
   if (!gst_omx_video_enc_shutdown (self))
@@ -583,8 +590,6 @@ gst_omx_video_enc_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      if (!gst_omx_video_enc_open (self))
-        ret = GST_STATE_CHANGE_FAILURE;
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       if (self->in_port)
@@ -632,8 +637,6 @@ gst_omx_video_enc_change_state (GstElement * element, GstStateChange transition)
         ret = GST_STATE_CHANGE_FAILURE;
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
-      if (!gst_omx_video_enc_close (self))
-        ret = GST_STATE_CHANGE_FAILURE;
       break;
     default:
       break;

@@ -49,6 +49,8 @@ static GstStateChangeReturn
 gst_omx_video_dec_change_state (GstElement * element,
     GstStateChange transition);
 
+static gboolean gst_omx_video_dec_open (GstVideoDecoder * decoder);
+static gboolean gst_omx_video_dec_close (GstVideoDecoder * decoder);
 static gboolean gst_omx_video_dec_start (GstVideoDecoder * decoder);
 static gboolean gst_omx_video_dec_stop (GstVideoDecoder * decoder);
 static gboolean gst_omx_video_dec_set_format (GstVideoDecoder * decoder,
@@ -223,6 +225,8 @@ gst_omx_video_dec_class_init (GstOMXVideoDecClass * klass)
   element_class->change_state =
       GST_DEBUG_FUNCPTR (gst_omx_video_dec_change_state);
 
+  video_decoder_class->open = GST_DEBUG_FUNCPTR (gst_omx_video_dec_open);
+  video_decoder_class->close = GST_DEBUG_FUNCPTR (gst_omx_video_dec_close);
   video_decoder_class->start = GST_DEBUG_FUNCPTR (gst_omx_video_dec_start);
   video_decoder_class->stop = GST_DEBUG_FUNCPTR (gst_omx_video_dec_stop);
   video_decoder_class->reset = GST_DEBUG_FUNCPTR (gst_omx_video_dec_reset);
@@ -247,8 +251,9 @@ gst_omx_video_dec_init (GstOMXVideoDec * self, GstOMXVideoDecClass * klass)
 }
 
 static gboolean
-gst_omx_video_dec_open (GstOMXVideoDec * self)
+gst_omx_video_dec_open (GstVideoDecoder * decoder)
 {
+  GstOMXVideoDec *self = GST_OMX_VIDEO_DEC (decoder);
   GstOMXVideoDecClass *klass = GST_OMX_VIDEO_DEC_GET_CLASS (self);
 
   GST_DEBUG_OBJECT (self, "Opening decoder");
@@ -302,8 +307,10 @@ gst_omx_video_dec_shutdown (GstOMXVideoDec * self)
 }
 
 static gboolean
-gst_omx_video_dec_close (GstOMXVideoDec * self)
+gst_omx_video_dec_close (GstVideoDecoder * decoder)
 {
+  GstOMXVideoDec *self = GST_OMX_VIDEO_DEC (decoder);
+
   GST_DEBUG_OBJECT (self, "Closing decoder");
 
   if (!gst_omx_video_dec_shutdown (self))
@@ -345,8 +352,6 @@ gst_omx_video_dec_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      if (!gst_omx_video_dec_open (self))
-        ret = GST_STATE_CHANGE_FAILURE;
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       if (self->in_port)
@@ -393,8 +398,6 @@ gst_omx_video_dec_change_state (GstElement * element, GstStateChange transition)
         ret = GST_STATE_CHANGE_FAILURE;
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
-      if (!gst_omx_video_dec_close (self))
-        ret = GST_STATE_CHANGE_FAILURE;
       break;
     default:
       break;
@@ -1135,11 +1138,11 @@ gst_omx_video_dec_set_format (GstVideoDecoder * decoder,
     if (klass->hacks & GST_OMX_HACK_NO_COMPONENT_RECONFIGURE) {
       GST_VIDEO_DECODER_STREAM_UNLOCK (self);
       gst_omx_video_dec_stop (GST_VIDEO_DECODER (self));
-      gst_omx_video_dec_close (self);
+      gst_omx_video_dec_close (GST_VIDEO_DECODER (self));
 
       GST_VIDEO_DECODER_STREAM_LOCK (self);
 
-      if (!gst_omx_video_dec_open (self))
+      if (!gst_omx_video_dec_open (GST_VIDEO_DECODER (self)))
         return FALSE;
       needs_disable = FALSE;
     } else {
