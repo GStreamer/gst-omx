@@ -745,6 +745,8 @@ gst_omx_video_enc_handle_output_frame (GstOMXVideoEnc * self, GstOMXPort * port,
     GstBuffer *codec_data;
     GstCaps *caps;
 
+    GST_DEBUG_OBJECT (self, "Handling codec data");
+
     caps = klass->get_caps (self, self->out_port, self->input_state);
     codec_data = gst_buffer_new_and_alloc (buf->omx_buf->nFilledLen);
     memcpy (GST_BUFFER_DATA (codec_data),
@@ -763,6 +765,8 @@ gst_omx_video_enc_handle_output_frame (GstOMXVideoEnc * self, GstOMXPort * port,
     flow_ret = GST_FLOW_OK;
   } else if (buf->omx_buf->nFilledLen > 0) {
     GstBuffer *outbuf;
+
+    GST_DEBUG_OBJECT (self, "Handling output data");
 
     if (buf->omx_buf->nFilledLen > 0) {
       outbuf = gst_buffer_new_and_alloc (buf->omx_buf->nFilledLen);
@@ -854,6 +858,9 @@ gst_omx_video_enc_loop (GstOMXVideoEnc * self)
       GST_VIDEO_ENCODER_STREAM_UNLOCK (self);
       goto caps_failed;
     }
+
+    GST_DEBUG_OBJECT (self, "Setting output state: %" GST_PTR_FORMAT, caps);
+
     state =
         gst_video_encoder_set_output_state (GST_VIDEO_ENCODER (self), caps,
         self->input_state);
@@ -923,6 +930,8 @@ gst_omx_video_enc_loop (GstOMXVideoEnc * self)
     GST_VIDEO_ENCODER_STREAM_LOCK (self);
     flow_ret = GST_FLOW_UNEXPECTED;
   }
+
+  GST_DEBUG_OBJECT (self, "Read frame from component");
 
   if (flow_ret != GST_FLOW_OK)
     goto flow_error;
@@ -1071,12 +1080,15 @@ gst_omx_video_enc_set_format (GstVideoEncoder * encoder,
    * format change happened we can just exit here.
    */
   if (needs_disable) {
+    GST_DEBUG_OBJECT (self, "Need to disable and drain encoder");
     gst_omx_video_enc_drain (self, FALSE);
 
     if (gst_omx_port_manual_reconfigure (self->in_port, TRUE) != OMX_ErrorNone)
       return FALSE;
     if (gst_omx_port_set_enabled (self->in_port, FALSE) != OMX_ErrorNone)
       return FALSE;
+
+    GST_DEBUG_OBJECT (self, "Encoder drained and disabled");
   }
 
   switch (info->finfo->format) {
@@ -1102,8 +1114,11 @@ gst_omx_video_enc_set_format (GstVideoEncoder * encoder,
       port_def.format.video.xFramerate = (info->fps_n) / (info->fps_d);
   }
 
+  GST_DEBUG_OBJECT (self, "Setting inport port definition");
   if (!gst_omx_port_update_port_definition (self->in_port, &port_def))
     return FALSE;
+
+  GST_DEBUG_OBJECT (self, "Setting outport port definition");
   if (!gst_omx_port_update_port_definition (self->out_port, NULL))
     return FALSE;
 
@@ -1114,6 +1129,7 @@ gst_omx_video_enc_set_format (GstVideoEncoder * encoder,
     }
   }
 
+  GST_DEBUG_OBJECT (self, "Enabling component");
   if (needs_disable) {
     if (gst_omx_port_set_enabled (self->in_port, TRUE) != OMX_ErrorNone)
       return FALSE;
@@ -1159,6 +1175,7 @@ gst_omx_video_enc_set_format (GstVideoEncoder * encoder,
   self->input_state = gst_video_codec_state_ref (self->input_state);
 
   /* Start the srcpad loop again */
+  GST_DEBUG_OBJECT (self, "Starting task again");
   self->downstream_flow_ret = GST_FLOW_OK;
   gst_pad_start_task (GST_VIDEO_ENCODER_SRC_PAD (self),
       (GstTaskFunction) gst_omx_video_enc_loop, encoder);
@@ -1442,6 +1459,8 @@ gst_omx_video_enc_handle_frame (GstVideoEncoder * encoder,
     }
 
     /* Now handle the frame */
+    GST_DEBUG_OBJECT (self, "Handling frame");
+
     if (GST_VIDEO_CODEC_FRAME_IS_FORCE_KEYFRAME (frame)) {
       OMX_ERRORTYPE err;
       OMX_CONFIG_INTRAREFRESHVOPTYPE config;
@@ -1450,6 +1469,7 @@ gst_omx_video_enc_handle_frame (GstVideoEncoder * encoder,
       config.nPortIndex = self->out_port->index;
       config.IntraRefreshVOP = OMX_TRUE;
 
+      GST_DEBUG_OBJECT (self, "Forcing a keyframe");
       err =
           gst_omx_component_set_config (self->component,
           OMX_IndexConfigVideoIntraVOPRefresh, &config);
@@ -1487,6 +1507,8 @@ gst_omx_video_enc_handle_frame (GstVideoEncoder * encoder,
 
     self->started = TRUE;
     gst_omx_port_release_buffer (self->in_port, buf);
+
+    GST_DEBUG_OBJECT (self, "Passed frame to component");
   }
 
   return self->downstream_flow_ret;;
