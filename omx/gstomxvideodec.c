@@ -688,6 +688,7 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
 
     switch (port_def.format.video.eColorFormat) {
       case OMX_COLOR_FormatYUV420Planar:
+      case OMX_COLOR_FormatYUV420PackedPlanar:
         format = GST_VIDEO_FORMAT_I420;
         break;
       case OMX_COLOR_FormatYUV420SemiPlanar:
@@ -1026,6 +1027,7 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
     if (err == OMX_ErrorNone) {
       switch (param.eColorFormat) {
         case OMX_COLOR_FormatYUV420Planar:
+        case OMX_COLOR_FormatYUV420PackedPlanar:
           m = g_slice_new0 (VideoNegotiationMap);
           m->format = GST_VIDEO_FORMAT_I420;
           m->type = param.eColorFormat;
