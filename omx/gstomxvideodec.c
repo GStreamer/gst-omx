@@ -1043,6 +1043,8 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
     intersection = tmp;
   }
 
+  gst_caps_unref (comp_supported_caps);
+
   if (gst_caps_is_empty (intersection)) {
     gst_caps_unref (intersection);
     GST_ERROR_OBJECT (self, "Empty caps");
@@ -1050,6 +1052,7 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
   }
 
   gst_caps_truncate (intersection);
+  gst_pad_fixate_caps (GST_VIDEO_DECODER_SRC_PAD (self), intersection);
 
   s = gst_caps_get_structure (intersection, 0);
   if (!gst_structure_get_fourcc (s, "format", &fourcc) ||
