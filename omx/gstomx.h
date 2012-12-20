@@ -53,6 +53,18 @@
 
 G_BEGIN_DECLS
 
+#if (!GLIB_CHECK_VERSION(2,28,0))
+static inline void
+g_list_free_full (GList * list, GDestroyNotify free_func)
+{
+  GList *next = list;
+  while (next) {
+    free_func (next->data);
+    next = g_list_remove_link (next, next);
+  }
+}
+#endif
+
 #define GST_OMX_INIT_STRUCT(st) G_STMT_START { \
   memset ((st), 0, sizeof (*(st))); \
   (st)->nSize = sizeof (*(st)); \
