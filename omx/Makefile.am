@@ -24,8 +24,7 @@ libgstopenmax_la_SOURCES = \
 	gstomxmpeg4videoenc.c \
 	gstomxh264enc.c \
 	gstomxh263enc.c \
-	gstomxaacenc.c \
-	gstomxrecmutex.c
+	gstomxaacenc.c
 
 if USE_LOCAL_VIDEO_BASE_CLASSES
 libgstopenmax_la_SOURCES += $(VIDEO_BASE_CLASSES_C)
@@ -43,8 +42,7 @@ noinst_HEADERS = \
 	gstomxmpeg4videoenc.h \
 	gstomxh264enc.h \
 	gstomxh263enc.h \
-	gstomxaacenc.h \
-	gstomxrecmutex.h \
+	gstomxaacenc.h
 	$(VIDEO_BASE_CLASSES_H)
 
 libgstopenmax_la_CFLAGS = \

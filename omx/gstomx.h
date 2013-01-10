@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2011, Hewlett-Packard Development Company, L.P.
  *   Author: Sebastian Dröge <sebastian.droege@collabora.co.uk>, Collabora Ltd.
+ * Copyright (C) 2013, Collabora Ltd.
+ *   Author: Sebastian Dröge <sebastian.droege@collabora.co.uk>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -48,8 +50,6 @@
 #ifdef GST_OMX_STRUCT_PACKING
 #pragma pack()
 #endif
-
-#include "gstomxrecmutex.h"
 
 G_BEGIN_DECLS
 
@@ -120,6 +120,7 @@ typedef struct _GstOMXPort GstOMXPort;
 typedef enum _GstOMXPortDirection GstOMXPortDirection;
 typedef struct _GstOMXComponent GstOMXComponent;
 typedef struct _GstOMXBuffer GstOMXBuffer;
+typedef struct _GstOMXMessage GstOMXMessage;
 
 typedef enum {
   /* Everything good and the buffer is valid */
@@ -145,8 +146,6 @@ struct _GstOMXCore {
   gint user_count; /* LOCK */
 
   /* OpenMAX core library functions, protected with LOCK */
-  /* FIXME: OpenMAX spec does not specify that this is required
-   * but gst-openmax does it */
   OMX_ERRORTYPE (*init) (void);
   OMX_ERRORTYPE (*deinit) (void);
   OMX_ERRORTYPE (*get_handle) (OMX_HANDLETYPE * handle,
@@ -154,32 +153,51 @@ struct _GstOMXCore {
   OMX_ERRORTYPE (*free_handle) (OMX_HANDLETYPE handle);
 };
 
+typedef enum {
+  GST_OMX_MESSAGE_STATE_SET,
+  GST_OMX_MESSAGE_FLUSH,
+  GST_OMX_MESSAGE_ERROR,
+  GST_OMX_MESSAGE_PORT_ENABLE,
+  GST_OMX_MESSAGE_PORT_SETTINGS_CHANGED,
+  GST_OMX_MESSAGE_BUFFER_DONE,
+} GstOMXMessageType;
+
+struct _GstOMXMessage {
+  GstOMXMessageType type;
+
+  union {
+    struct {
+      OMX_STATETYPE state;
+    } state_set;
+    struct {
+      OMX_U32 port;
+    } flush;
+    struct {
+      OMX_ERRORTYPE error;
+    } error;
+    struct {
+      OMX_U32 port;
+      OMX_BOOL enable;
+    } port_enable;
+    struct {
+      OMX_U32 port;
+    } port_settings_changed;
+    struct {
+      OMX_HANDLETYPE component;
+      OMX_PTR app_data;
+      OMX_BUFFERHEADERTYPE *buffer;
+      OMX_BOOL empty;
+    } buffer_done;
+  } content;
+};
+
 struct _GstOMXPort {
   GstOMXComponent *comp;
   guint32 index;
 
-  /* Protects port_def, buffers, pending_buffers,
-   * settings_changed, flushing, flushed, enabled_changed
-   * and settings_cookie.
-   *
-   * Signalled if pending_buffers gets a
-   * new buffer or flushing/flushed is set
-   * to TRUE or the port is enabled/disabled
-   * or the settings change or an error happens.
-   *
-   * Note: Always check comp->last_error before
-   * waiting and after being signalled!
-   *
-   * Note: flushed==TRUE implies flushing==TRUE!
-   *
-   * Note: This lock must always be taken before
-   * the component's state lock if both are needed!
-   */
-  GstOMXRecMutex port_lock;
-  GCond *port_cond;
   OMX_PARAM_PORTDEFINITIONTYPE port_def;
   GPtrArray *buffers; /* Contains GstOMXBuffer* */
-  GQueue *pending_buffers; /* Contains GstOMXBuffer* */
+  GQueue pending_buffers; /* Contains GstOMXBuffer* */
   /* If TRUE we need to get the new caps of this port */
   gboolean settings_changed;
   gboolean flushing;
@@ -201,15 +219,20 @@ struct _GstOMXComponent {
 
   guint64 hacks; /* Flags, GST_OMX_HACK_* */
 
+  /* Added once, never changed. No locks necessary */
   GPtrArray *ports; /* Contains GstOMXPort* */
   gint n_in_ports, n_out_ports;
 
-  /* Protecting state, pending_state, last_error,
-   * pending_reconfigure_outports.
-   * Signalled if one of them changes
-   */
-  GstOMXRecMutex state_lock;
-  GCond *state_cond;
+  /* Locking order: lock -> messages_lock
+   *
+   * Never hold lock while waiting for messages_cond
+   * Always check that messages is empty before waiting */
+  GMutex *lock;
+
+  GQueue messages; /* Queue of GstOMXMessages */
+  GMutex *messages_lock;
+  GCond *messages_cond;
+
   OMX_STATETYPE state;
   /* OMX_StateInvalid if no pending state */
   OMX_STATETYPE pending_state;
