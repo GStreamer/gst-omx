@@ -114,6 +114,9 @@ gst_omx_core_acquire (const gchar * filename)
     if (!g_module_symbol (core->module, "OMX_FreeHandle",
             (gpointer *) & core->free_handle))
       goto symbol_error;
+    if (!g_module_symbol (core->module, "OMX_SetupTunnel",
+            (gpointer *) & core->setup_tunnel))
+      goto symbol_error;
 
     GST_DEBUG ("Successfully loaded core '%s'", filename);
   }
@@ -288,7 +291,9 @@ gst_omx_component_handle_messages (GstOMXComponent * comp)
 
           if (index == OMX_ALL || index == port->index) {
             port->settings_cookie++;
-            if (port->port_def.eDir == OMX_DirOutput)
+            gst_omx_port_update_port_definition (port, NULL);
+            if (port->port_def.eDir == OMX_DirOutput && !port->tunneled
+                && port->port_def.bEnabled)
               outports = g_list_prepend (outports, port);
           }
         }
@@ -506,6 +511,11 @@ EmptyBufferDone (OMX_HANDLETYPE hComponent, OMX_PTR pAppData,
 
   g_assert (buf->omx_buf == pBuffer);
 
+  if (buf->port->tunneled) {
+    GST_ERROR ("EmptyBufferDone on tunneled port");
+    return OMX_ErrorBadParameter;
+  }
+
   comp = buf->port->comp;
 
   msg = g_slice_new (GstOMXMessage);
@@ -538,6 +548,11 @@ FillBufferDone (OMX_HANDLETYPE hComponent, OMX_PTR pAppData,
   }
 
   g_assert (buf->omx_buf == pBuffer);
+
+  if (buf->port->tunneled) {
+    GST_ERROR ("FillBufferDone on tunneled port");
+    return OMX_ErrorBadParameter;
+  }
 
   comp = buf->port->comp;
 
@@ -860,6 +875,8 @@ gst_omx_component_add_port (GstOMXComponent * comp, guint32 index)
   port->comp = comp;
   port->index = index;
 
+  port->tunneled = FALSE;
+
   port->port_def = port_def;
 
   g_queue_init (&port->pending_buffers);
@@ -1038,6 +1055,104 @@ gst_omx_component_set_config (GstOMXComponent * comp, OMX_INDEXTYPE index,
   return err;
 }
 
+OMX_ERRORTYPE
+gst_omx_component_setup_tunnel (GstOMXComponent * comp1, GstOMXPort * port1,
+    GstOMXComponent * comp2, GstOMXPort * port2)
+{
+  OMX_ERRORTYPE err;
+
+  g_return_val_if_fail (comp1 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (comp1->state == OMX_StateLoaded
+      || !port1->port_def.bEnabled, OMX_ErrorUndefined);
+  g_return_val_if_fail (port1 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (port1->port_def.eDir == OMX_DirOutput,
+      OMX_ErrorUndefined);
+  g_return_val_if_fail (comp2 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (comp2->state == OMX_StateLoaded
+      || !port2->port_def.bEnabled, OMX_ErrorUndefined);
+  g_return_val_if_fail (port2 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (port2->port_def.eDir == OMX_DirInput,
+      OMX_ErrorUndefined);
+  g_return_val_if_fail (comp1->core == comp2->core, OMX_ErrorUndefined);
+
+  g_mutex_lock (comp1->lock);
+  g_mutex_lock (comp2->lock);
+  GST_DEBUG_OBJECT (comp1->parent,
+      "Setup tunnel between %p port %u and %p port %u",
+      comp1, port1->index, comp2, port2->index);
+
+  err = comp1->core->setup_tunnel (comp1->handle, port1->index, comp2->handle,
+      port2->index);
+
+  if (err == OMX_ErrorNone) {
+    port1->tunneled = TRUE;
+    port2->tunneled = TRUE;
+  }
+
+  GST_DEBUG_OBJECT (comp1->parent,
+      "Setup tunnel between %p port %u and %p port %u: %s (0x%08x)",
+      comp1, port1->index,
+      comp2, port2->index, gst_omx_error_to_string (err), err);
+
+  g_mutex_unlock (comp2->lock);
+  g_mutex_unlock (comp1->lock);
+
+  return err;
+}
+
+OMX_ERRORTYPE
+gst_omx_component_close_tunnel (GstOMXComponent * comp1, GstOMXPort * port1,
+    GstOMXComponent * comp2, GstOMXPort * port2)
+{
+  OMX_ERRORTYPE err;
+
+  g_return_val_if_fail (comp1 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (comp1->state == OMX_StateLoaded
+      || !port1->port_def.bEnabled, OMX_ErrorUndefined);
+  g_return_val_if_fail (port1 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (port1->port_def.eDir == OMX_DirOutput,
+      OMX_ErrorUndefined);
+  g_return_val_if_fail (comp2 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (comp2->state == OMX_StateLoaded
+      || !port2->port_def.bEnabled, OMX_ErrorUndefined);
+  g_return_val_if_fail (port2 != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (port2->port_def.eDir == OMX_DirInput,
+      OMX_ErrorUndefined);
+  g_return_val_if_fail (comp1->core == comp2->core, OMX_ErrorUndefined);
+  g_return_val_if_fail (port1->tunneled && port2->tunneled, OMX_ErrorUndefined);
+
+  g_mutex_lock (comp1->lock);
+  g_mutex_lock (comp2->lock);
+  GST_DEBUG_OBJECT (comp1->parent,
+      "Closing tunnel between %p port %u and %p port %u",
+      comp1, port1->index, comp2, port2->index);
+
+  err = comp1->core->setup_tunnel (comp1->handle, port1->index, 0, 0);
+  if (err != OMX_ErrorNone) {
+    GST_ERROR_OBJECT (comp1->parent,
+        "Failed to close tunnel on output side %s (0x%08x)",
+        gst_omx_error_to_string (err), err);
+  }
+  err = comp2->core->setup_tunnel (0, 0, comp2->handle, port2->index);
+  if (err != OMX_ErrorNone) {
+    GST_ERROR_OBJECT (comp2->parent,
+        "Failed to close tunnel on input side %s (0x%08x)",
+        gst_omx_error_to_string (err), err);
+  }
+
+  port1->tunneled = FALSE;
+  port2->tunneled = FALSE;
+
+  GST_DEBUG_OBJECT (comp1->parent,
+      "Closed tunnel between %p port %u and %p port %u",
+      comp1, port1->index, comp2, port2->index);
+
+  g_mutex_unlock (comp2->lock);
+  g_mutex_unlock (comp1->lock);
+
+  return err;
+}
+
 void
 gst_omx_port_get_port_definition (GstOMXPort * port,
     OMX_PARAM_PORTDEFINITIONTYPE * port_def)
@@ -1089,6 +1204,7 @@ gst_omx_port_acquire_buffer (GstOMXPort * port, GstOMXBuffer ** buf)
   GstOMXBuffer *_buf = NULL;
 
   g_return_val_if_fail (port != NULL, GST_OMX_ACQUIRE_BUFFER_ERROR);
+  g_return_val_if_fail (!port->tunneled, GST_OMX_ACQUIRE_BUFFER_ERROR);
   g_return_val_if_fail (buf != NULL, GST_OMX_ACQUIRE_BUFFER_ERROR);
 
   *buf = NULL;
@@ -1232,6 +1348,7 @@ gst_omx_port_release_buffer (GstOMXPort * port, GstOMXBuffer * buf)
   OMX_ERRORTYPE err = OMX_ErrorNone;
 
   g_return_val_if_fail (port != NULL, OMX_ErrorUndefined);
+  g_return_val_if_fail (!port->tunneled, GST_OMX_ACQUIRE_BUFFER_ERROR);
   g_return_val_if_fail (buf != NULL, OMX_ErrorUndefined);
   g_return_val_if_fail (buf->port == port, OMX_ErrorUndefined);
 
@@ -1491,6 +1608,8 @@ gst_omx_port_allocate_buffers_unlocked (GstOMXPort * port)
 
   g_assert (!port->buffers || port->buffers->len == 0);
 
+  g_return_val_if_fail (!port->tunneled, OMX_ErrorBadParameter);
+
   comp = port->comp;
 
   gst_omx_component_handle_messages (port->comp);
@@ -1604,6 +1723,8 @@ gst_omx_port_deallocate_buffers_unlocked (GstOMXPort * port)
   GstOMXComponent *comp;
   OMX_ERRORTYPE err = OMX_ErrorNone;
   gint i, n;
+
+  g_return_val_if_fail (!port->tunneled, OMX_ErrorBadParameter);
 
   comp = port->comp;
 
@@ -1943,7 +2064,7 @@ gst_omx_port_wait_enabled_unlocked (GstOMXPort * port, GstClockTime timeout)
     /* If everything went fine and we have an output port we
      * should provide all newly allocated buffers to the port
      */
-    if (enabled && port->port_def.eDir == OMX_DirOutput) {
+    if (enabled && port->port_def.eDir == OMX_DirOutput && !port->tunneled) {
       GstOMXBuffer *buf;
 
       /* Enqueue all buffers for the component to fill */
@@ -2058,9 +2179,11 @@ gst_omx_port_reconfigure (GstOMXPort * port)
   if (err != OMX_ErrorNone)
     goto done;
 
-  err = gst_omx_port_deallocate_buffers_unlocked (port);
-  if (err != OMX_ErrorNone)
-    goto done;
+  if (!port->tunneled) {
+    err = gst_omx_port_deallocate_buffers_unlocked (port);
+    if (err != OMX_ErrorNone)
+      goto done;
+  }
 
   err = gst_omx_port_wait_enabled_unlocked (port, 5 * GST_SECOND);
   if (err != OMX_ErrorNone)
@@ -2070,9 +2193,11 @@ gst_omx_port_reconfigure (GstOMXPort * port)
   if (err != OMX_ErrorNone)
     goto done;
 
-  err = gst_omx_port_allocate_buffers_unlocked (port);
-  if (err != OMX_ErrorNone)
-    goto done;
+  if (!port->tunneled) {
+    err = gst_omx_port_allocate_buffers_unlocked (port);
+    if (err != OMX_ErrorNone)
+      goto done;
+  }
 
   err = gst_omx_port_wait_enabled_unlocked (port, 5 * GST_SECOND);
   if (err != OMX_ErrorNone)
