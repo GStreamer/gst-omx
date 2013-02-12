@@ -1367,6 +1367,7 @@ gst_omx_port_set_flushing (GstOMXPort * port, gboolean flush)
     last_error = OMX_ErrorNone;
     gst_omx_component_handle_messages (comp);
     while (signalled && last_error == OMX_ErrorNone && !port->flushed
+        && port->buffers
         && port->buffers->len > g_queue_get_length (&port->pending_buffers)) {
       g_mutex_lock (comp->messages_lock);
       g_mutex_unlock (comp->lock);
