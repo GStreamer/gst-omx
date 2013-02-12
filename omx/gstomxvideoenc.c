@@ -89,6 +89,7 @@ static gboolean gst_omx_video_enc_reset (GstVideoEncoder * encoder,
 static GstFlowReturn gst_omx_video_enc_handle_frame (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame);
 static gboolean gst_omx_video_enc_finish (GstVideoEncoder * encoder);
+static GstCaps *gst_omx_video_enc_getcaps (GstVideoEncoder * encoder);
 
 static GstFlowReturn gst_omx_video_enc_drain (GstOMXVideoEnc * self,
     gboolean at_eos);
@@ -317,6 +318,7 @@ gst_omx_video_enc_class_init (GstOMXVideoEncClass * klass)
   video_encoder_class->handle_frame =
       GST_DEBUG_FUNCPTR (gst_omx_video_enc_handle_frame);
   video_encoder_class->finish = GST_DEBUG_FUNCPTR (gst_omx_video_enc_finish);
+  video_encoder_class->getcaps = GST_DEBUG_FUNCPTR (gst_omx_video_enc_getcaps);
 
   klass->default_sink_template_caps = "video/x-raw-yuv, "
       "width = " GST_VIDEO_SIZE_RANGE ", "
@@ -1644,4 +1646,77 @@ gst_omx_video_enc_drain (GstOMXVideoEnc * self, gboolean at_eos)
   self->started = FALSE;
 
   return GST_FLOW_OK;
+}
+static GstCaps *
+gst_omx_video_enc_getcaps (GstVideoEncoder * encoder)
+{
+  GstOMXVideoEnc *self = GST_OMX_VIDEO_ENC (encoder);
+  GstOMXVideoEncClass *klass = GST_OMX_VIDEO_ENC_GET_CLASS (self);
+  GstOMXPort *port = self->in_port;
+  OMX_VIDEO_PARAM_PORTFORMATTYPE param;
+  OMX_ERRORTYPE err;
+  GstCaps *comp_supported_caps;
+  gint old_index;
+
+  if (!self->component)
+    return gst_video_encoder_proxy_getcaps (encoder, NULL);
+
+  GST_OMX_INIT_STRUCT (&param);
+  param.nPortIndex = port->index;
+  param.nIndex = 0;
+  if (!(klass->hacks & GST_OMX_HACK_VIDEO_FRAMERATE_INTEGER))
+    param.xFramerate = (25 << 16) / (1);
+  else
+    param.xFramerate = (25) / (1);
+
+  old_index = -1;
+  comp_supported_caps = gst_caps_new_empty ();
+  do {
+    err =
+        gst_omx_component_get_parameter (self->component,
+        OMX_IndexParamVideoPortFormat, &param);
+
+    /* FIXME: Workaround for Bellagio that simply always
+     * returns the same value regardless of nIndex and
+     * never returns OMX_ErrorNoMore
+     */
+    if (old_index == param.nIndex)
+      break;
+
+    if (err == OMX_ErrorNone || err == OMX_ErrorNoMore) {
+      switch (param.eColorFormat) {
+        case OMX_COLOR_FormatYUV420Planar:
+        case OMX_COLOR_FormatYUV420PackedPlanar:
+          gst_caps_append_structure (comp_supported_caps,
+              gst_structure_new ("video/x-raw-yuv",
+                  "format", GST_TYPE_FOURCC,
+                  GST_MAKE_FOURCC ('I', '4', '2','0'), NULL));
+          GST_DEBUG_OBJECT (self, "Component supports I420 (%d) at index %d",
+              param.eColorFormat, param.nIndex);
+          break;
+        case OMX_COLOR_FormatYUV420SemiPlanar:
+          gst_caps_append_structure (comp_supported_caps,
+              gst_structure_new ("video/x-raw-yuv",
+                  "format", GST_TYPE_FOURCC,
+                  GST_MAKE_FOURCC ('N', 'V', '1','2'), NULL));
+          GST_DEBUG_OBJECT (self, "Component supports NV12 (%d) at index %d",
+              param.eColorFormat, param.nIndex);
+          break;
+        default:
+          break;
+      }
+    }
+    old_index = param.nIndex++;
+  } while (err == OMX_ErrorNone);
+
+  if (!gst_caps_is_empty (comp_supported_caps)) {
+    GstCaps *ret =
+        gst_video_encoder_proxy_getcaps (encoder, comp_supported_caps);
+
+    gst_caps_unref (comp_supported_caps);
+    return ret;
+  } else {
+    gst_caps_unref (comp_supported_caps);
+    return gst_video_encoder_proxy_getcaps (encoder, NULL);
+  }
 }
