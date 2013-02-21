@@ -47,9 +47,13 @@ noinst_HEADERS = \
 	gstomxaacenc.h
 	$(VIDEO_BASE_CLASSES_H)
 
+if !HAVE_EXTERNAL_OMX
+OMX_INCLUDEPATH = -I$(abs_srcdir)/openmax
+endif
+
 libgstopenmax_la_CFLAGS = \
 	-DGST_USE_UNSTABLE_API=1 \
-	-I$(abs_srcdir)/openmax \
+	$(OMX_INCLUDEPATH) \
 	$(GST_PLUGINS_BASE_CFLAGS) \
 	$(GST_BASE_CFLAGS) \
 	$(GST_CFLAGS)
