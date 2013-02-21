@@ -68,7 +68,7 @@ libgstopenmax_la_LIBADD = \
 
 libgstopenmax_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 
-EXTRA_DIST = openmax gstomx.conf
+EXTRA_DIST = openmax
 
 Android.mk: Makefile.am $(BUILT_SOURCES)
 	androgenizer \
