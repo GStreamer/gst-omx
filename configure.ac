@@ -334,6 +334,7 @@ common/Makefile
 common/m4/Makefile
 tools/Makefile
 config/Makefile
+config/rpi/Makefile
 )
 
 AC_OUTPUT
