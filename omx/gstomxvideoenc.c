@@ -1200,7 +1200,6 @@ gst_omx_video_enc_set_format (GstVideoEncoder * encoder,
         (~(port_def.nBufferAlignment - 1));
   else
     port_def.format.video.nStride = GST_ROUND_UP_4 (info->width);       /* safe (?) default */
-  port_def.format.video.nFrameHeight = info->height;
 
   port_def.format.video.nFrameHeight = info->height;
   port_def.format.video.nSliceHeight = info->height;
