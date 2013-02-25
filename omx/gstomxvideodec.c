@@ -998,39 +998,16 @@ video_negotiation_map_free (VideoNegotiationMap * m)
   g_slice_free (VideoNegotiationMap, m);
 }
 
-static gboolean
-gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
+static GList *
+gst_omx_video_dec_get_supported_colorformats (GstOMXVideoDec * self)
 {
   GstOMXPort *port = self->dec_out_port;
   GstVideoCodecState *state = self->input_state;
   GstVideoInfo *info = &state->info;
   OMX_VIDEO_PARAM_PORTFORMATTYPE param;
   OMX_ERRORTYPE err;
-  GstCaps *comp_supported_caps;
-  GList *negotiation_map = NULL, *l;
-  GstCaps *templ_caps;
-  GstCaps *peer_caps, *intersection;
-  GstVideoFormat format;
+  GList *negotiation_map = NULL;
   gint old_index;
-  GstStructure *s;
-  guint32 fourcc;
-
-  GST_DEBUG_OBJECT (self, "Trying to negotiate a video format with downstream");
-
-  templ_caps =
-      gst_caps_copy (gst_pad_get_pad_template_caps (GST_VIDEO_DECODER_SRC_PAD
-          (self)));
-  peer_caps = gst_pad_peer_get_caps (GST_VIDEO_DECODER_SRC_PAD (self));
-  if (peer_caps) {
-    intersection = gst_caps_intersect (templ_caps, peer_caps);
-    gst_caps_unref (templ_caps);
-    gst_caps_unref (peer_caps);
-  } else {
-    intersection = templ_caps;
-  }
-
-  GST_DEBUG_OBJECT (self, "Allowed downstream caps: %" GST_PTR_FORMAT,
-      intersection);
 
   GST_OMX_INIT_STRUCT (&param);
   param.nPortIndex = port->index;
@@ -1041,7 +1018,6 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
     param.xFramerate = (info->fps_n << 16) / (info->fps_d);
 
   old_index = -1;
-  comp_supported_caps = gst_caps_new_empty ();
   do {
     VideoNegotiationMap *m;
 
@@ -1060,35 +1036,74 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
       switch (param.eColorFormat) {
         case OMX_COLOR_FormatYUV420Planar:
         case OMX_COLOR_FormatYUV420PackedPlanar:
-          m = g_slice_new0 (VideoNegotiationMap);
+          m = g_slice_new (VideoNegotiationMap);
           m->format = GST_VIDEO_FORMAT_I420;
           m->type = param.eColorFormat;
           negotiation_map = g_list_append (negotiation_map, m);
-          gst_caps_append_structure (comp_supported_caps,
-              gst_structure_new ("video/x-raw-yuv",
-                  "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC ('I', '4', '2',
-                      '0'), NULL));
           GST_DEBUG_OBJECT (self, "Component supports I420 (%d) at index %d",
               param.eColorFormat, param.nIndex);
           break;
         case OMX_COLOR_FormatYUV420SemiPlanar:
-          m = g_slice_new0 (VideoNegotiationMap);
+          m = g_slice_new (VideoNegotiationMap);
           m->format = GST_VIDEO_FORMAT_NV12;
           m->type = param.eColorFormat;
           negotiation_map = g_list_append (negotiation_map, m);
-          gst_caps_append_structure (comp_supported_caps,
-              gst_structure_new ("video/x-raw-yuv",
-                  "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC ('N', 'V', '1',
-                      '2'), NULL));
           GST_DEBUG_OBJECT (self, "Component supports NV12 (%d) at index %d",
               param.eColorFormat, param.nIndex);
           break;
         default:
+          GST_DEBUG_OBJECT (self,
+              "Component supports unsupported color format %d at index %d",
+              param.eColorFormat, param.nIndex);
           break;
       }
     }
     old_index = param.nIndex++;
   } while (err == OMX_ErrorNone);
+
+  return negotiation_map;
+}
+
+static gboolean
+gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
+{
+  OMX_VIDEO_PARAM_PORTFORMATTYPE param;
+  OMX_ERRORTYPE err;
+  GstCaps *comp_supported_caps;
+  GList *negotiation_map = NULL, *l;
+  GstCaps *templ_caps, *peer_caps, *intersection;
+  GstVideoFormat format;
+  GstStructure *s;
+  guint32 fourcc;;
+
+  GST_DEBUG_OBJECT (self, "Trying to negotiate a video format with downstream");
+
+  templ_caps =
+      gst_caps_copy (gst_pad_get_pad_template_caps (GST_VIDEO_DECODER_SRC_PAD
+          (self)));
+  peer_caps = gst_pad_peer_get_caps (GST_VIDEO_DECODER_SRC_PAD (self));
+  if (peer_caps) {
+    intersection = gst_caps_intersect (templ_caps, peer_caps);
+    gst_caps_unref (templ_caps);
+    gst_caps_unref (peer_caps);
+  } else {
+    intersection = templ_caps;
+  }
+
+
+  GST_DEBUG_OBJECT (self, "Allowed downstream caps: %" GST_PTR_FORMAT,
+      intersection);
+
+  negotiation_map = gst_omx_video_dec_get_supported_colorformats (self);
+  comp_supported_caps = gst_caps_new_empty ();
+  for (l = negotiation_map; l; l = l->next) {
+    VideoNegotiationMap *map = l->data;
+
+    gst_caps_append_structure (comp_supported_caps,
+        gst_structure_new ("video/x-raw-yuv",
+            "format", GST_TYPE_FOURCC,
+            gst_video_format_to_fourcc (map->format), NULL));
+  }
 
   if (!gst_caps_is_empty (comp_supported_caps)) {
     GstCaps *tmp;
@@ -1097,7 +1112,6 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
     gst_caps_unref (intersection);
     intersection = tmp;
   }
-
   gst_caps_unref (comp_supported_caps);
 
   if (gst_caps_is_empty (intersection)) {
