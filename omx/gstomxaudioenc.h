@@ -49,8 +49,8 @@ struct _GstOMXAudioEnc
   GstAudioEncoder parent;
 
   /* < protected > */
-  GstOMXComponent *component;
-  GstOMXPort *in_port, *out_port;
+  GstOMXComponent *enc;
+  GstOMXPort *enc_in_port, *enc_out_port;
 
   /* < private > */
   /* TRUE if the component is configured and saw
