@@ -58,8 +58,8 @@ struct _GstOMXVideoEnc
   GstVideoEncoder parent;
 
   /* < protected > */
-  GstOMXComponent *component;
-  GstOMXPort *in_port, *out_port;
+  GstOMXComponent *enc;
+  GstOMXPort *enc_in_port, *enc_out_port;
 
   /* < private > */
   GstVideoCodecState *input_state;
