@@ -126,9 +126,9 @@ gst_omx_video_dec_base_init (gpointer g_class)
   in_port_index =
       g_key_file_get_integer (config, element_name, "in-port-index", &err);
   if (err != NULL) {
-    GST_DEBUG ("No 'in-port-index' set for element '%s', assuming 0: %s",
+    GST_DEBUG ("No 'in-port-index' set for element '%s', assuming auto-detecting: %s",
         element_name, err->message);
-    in_port_index = 0;
+    in_port_index = -1;
     g_error_free (err);
   }
   videodec_class->in_port_index = in_port_index;
@@ -137,9 +137,9 @@ gst_omx_video_dec_base_init (gpointer g_class)
   out_port_index =
       g_key_file_get_integer (config, element_name, "out-port-index", &err);
   if (err != NULL) {
-    GST_DEBUG ("No 'out-port-index' set for element '%s', assuming 1: %s",
+    GST_DEBUG ("No 'out-port-index' set for element '%s', assuming auto-detecting: %s",
         element_name, err->message);
-    out_port_index = 1;
+    out_port_index = -1;
     g_error_free (err);
   }
   videodec_class->out_port_index = out_port_index;
@@ -255,6 +255,7 @@ gst_omx_video_dec_open (GstVideoDecoder * decoder)
 {
   GstOMXVideoDec *self = GST_OMX_VIDEO_DEC (decoder);
   GstOMXVideoDecClass *klass = GST_OMX_VIDEO_DEC_GET_CLASS (self);
+  gint in_port_index, out_port_index;
 
   GST_DEBUG_OBJECT (self, "Opening decoder");
 
@@ -270,10 +271,33 @@ gst_omx_video_dec_open (GstVideoDecoder * decoder)
           GST_CLOCK_TIME_NONE) != OMX_StateLoaded)
     return FALSE;
 
-  self->dec_in_port =
-      gst_omx_component_add_port (self->dec, klass->in_port_index);
-  self->dec_out_port =
-      gst_omx_component_add_port (self->dec, klass->out_port_index);
+  in_port_index = klass->in_port_index;
+  out_port_index = klass->out_port_index;
+
+  if (in_port_index == -1 || out_port_index == -1) {
+    OMX_PORT_PARAM_TYPE param;
+    OMX_ERRORTYPE err;
+
+    GST_OMX_INIT_STRUCT (&param);
+
+    err =
+        gst_omx_component_get_parameter (self->dec, OMX_IndexParamVideoInit,
+        &param);
+    if (err != OMX_ErrorNone) {
+      GST_WARNING_OBJECT (self, "Couldn't get port information: %s (0x%08x)",
+          gst_omx_error_to_string (err), err);
+      /* Fallback */
+      in_port_index = 0;
+      out_port_index = 1;
+    } else {
+      GST_DEBUG_OBJECT (self, "Detected %u ports, starting at %u", param.nPorts,
+          param.nStartPortNumber);
+      in_port_index = param.nStartPortNumber + 0;
+      out_port_index = param.nStartPortNumber + 1;
+    }
+  }
+  self->dec_in_port = gst_omx_component_add_port (self->dec, in_port_index);
+  self->dec_out_port = gst_omx_component_add_port (self->dec, out_port_index);
 
   if (!self->dec_in_port || !self->dec_out_port)
     return FALSE;
@@ -494,8 +518,8 @@ _find_nearest_frame (GstOMXVideoDec * self, GstOMXBuffer * buf)
 }
 
 static gboolean
-gst_omx_video_dec_fill_buffer (GstOMXVideoDec * self, GstOMXBuffer * inbuf,
-    GstBuffer * outbuf)
+gst_omx_video_dec_fill_buffer (GstOMXVideoDec * self,
+    GstOMXBuffer * inbuf, GstBuffer * outbuf)
 {
   GstVideoCodecState *state =
       gst_video_decoder_get_output_state (GST_VIDEO_DECODER (self));
@@ -719,8 +743,8 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
 
     GST_DEBUG_OBJECT (self,
         "Setting output state: format %s, width %d, height %d",
-        gst_video_format_to_string (format), port_def.format.video.nFrameWidth,
-        port_def.format.video.nFrameHeight);
+        gst_video_format_to_string (format),
+        port_def.format.video.nFrameWidth, port_def.format.video.nFrameHeight);
 
     state = gst_video_decoder_set_output_state (GST_VIDEO_DECODER (self),
         format, port_def.format.video.nFrameWidth,
@@ -760,8 +784,8 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
   }
 
   if (buf) {
-    GST_DEBUG_OBJECT (self, "Handling buffer: 0x%08x %lu", buf->omx_buf->nFlags,
-        buf->omx_buf->nTimeStamp);
+    GST_DEBUG_OBJECT (self, "Handling buffer: 0x%08x %lu",
+        buf->omx_buf->nFlags, buf->omx_buf->nTimeStamp);
 
     GST_VIDEO_DECODER_STREAM_LOCK (self);
     frame = _find_nearest_frame (self, buf);

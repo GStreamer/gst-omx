@@ -111,9 +111,9 @@ gst_omx_audio_enc_base_init (gpointer g_class)
   in_port_index =
       g_key_file_get_integer (config, element_name, "in-port-index", &err);
   if (err != NULL) {
-    GST_DEBUG ("No 'in-port-index' set for element '%s', assuming 0: %s",
+    GST_DEBUG ("No 'in-port-index' set for element '%s', assuming auto-detecting: %s",
         element_name, err->message);
-    in_port_index = 0;
+    in_port_index = -1;
     g_error_free (err);
   }
   audioenc_class->in_port_index = in_port_index;
@@ -122,9 +122,9 @@ gst_omx_audio_enc_base_init (gpointer g_class)
   out_port_index =
       g_key_file_get_integer (config, element_name, "out-port-index", &err);
   if (err != NULL) {
-    GST_DEBUG ("No 'out-port-index' set for element '%s', assuming 1: %s",
+    GST_DEBUG ("No 'out-port-index' set for element '%s', assuming auto-detecting: %s",
         element_name, err->message);
-    out_port_index = 1;
+    out_port_index = -1;
     g_error_free (err);
   }
   audioenc_class->out_port_index = out_port_index;
@@ -261,6 +261,7 @@ static gboolean
 gst_omx_audio_enc_open (GstOMXAudioEnc * self)
 {
   GstOMXAudioEncClass *klass = GST_OMX_AUDIO_ENC_GET_CLASS (self);
+  gint in_port_index, out_port_index;
 
   self->enc =
       gst_omx_component_new (GST_OBJECT_CAST (self), klass->core_name,
@@ -274,10 +275,34 @@ gst_omx_audio_enc_open (GstOMXAudioEnc * self)
           GST_CLOCK_TIME_NONE) != OMX_StateLoaded)
     return FALSE;
 
-  self->enc_in_port =
-      gst_omx_component_add_port (self->enc, klass->in_port_index);
-  self->enc_out_port =
-      gst_omx_component_add_port (self->enc, klass->out_port_index);
+  in_port_index = klass->in_port_index;
+  out_port_index = klass->out_port_index;
+
+  if (in_port_index == -1 || out_port_index == -1) {
+    OMX_PORT_PARAM_TYPE param;
+    OMX_ERRORTYPE err;
+
+    GST_OMX_INIT_STRUCT (&param);
+
+    err =
+        gst_omx_component_get_parameter (self->enc, OMX_IndexParamAudioInit,
+        &param);
+    if (err != OMX_ErrorNone) {
+      GST_WARNING_OBJECT (self, "Couldn't get port information: %s (0x%08x)",
+          gst_omx_error_to_string (err), err);
+      /* Fallback */
+      in_port_index = 0;
+      out_port_index = 1;
+    } else {
+      GST_DEBUG_OBJECT (self, "Detected %u ports, starting at %u", param.nPorts,
+          param.nStartPortNumber);
+      in_port_index = param.nStartPortNumber + 0;
+      out_port_index = param.nStartPortNumber + 1;
+    }
+  }
+
+  self->enc_in_port = gst_omx_component_add_port (self->enc, in_port_index);
+  self->enc_out_port = gst_omx_component_add_port (self->enc, out_port_index);
 
   if (!self->enc_in_port || !self->enc_out_port)
     return FALSE;
