@@ -129,9 +129,6 @@ typedef enum {
   GST_OMX_ACQUIRE_BUFFER_FLUSHING,
   /* The port must be reconfigured */
   GST_OMX_ACQUIRE_BUFFER_RECONFIGURE,
-  /* The port was reconfigured and the caps might have changed
-   * NOTE: This is only returned a single time! */
-  GST_OMX_ACQUIRE_BUFFER_RECONFIGURED,
   /* A fatal error happened */
   GST_OMX_ACQUIRE_BUFFER_ERROR
 } GstOMXAcquireBufferReturn;
@@ -201,8 +198,6 @@ struct _GstOMXPort {
   OMX_PARAM_PORTDEFINITIONTYPE port_def;
   GPtrArray *buffers; /* Contains GstOMXBuffer* */
   GQueue pending_buffers; /* Contains GstOMXBuffer* */
-  /* If TRUE we need to get the new caps of this port */
-  gboolean settings_changed;
   gboolean flushing;
   gboolean flushed; /* TRUE after OMX_CommandFlush was done */
   gboolean enabled_pending;  /* TRUE after OMX_Command{En,Dis}able */
@@ -283,8 +278,6 @@ const gchar *     gst_omx_component_get_last_error_string (GstOMXComponent * com
 GstOMXPort *      gst_omx_component_add_port (GstOMXComponent * comp, guint32 index);
 GstOMXPort *      gst_omx_component_get_port (GstOMXComponent * comp, guint32 index);
 
-void              gst_omx_component_trigger_settings_changed (GstOMXComponent * comp, guint32 port_index);
-
 OMX_ERRORTYPE     gst_omx_component_get_parameter (GstOMXComponent * comp, OMX_INDEXTYPE index, gpointer param);
 OMX_ERRORTYPE     gst_omx_component_set_parameter (GstOMXComponent * comp, OMX_INDEXTYPE index, gpointer param);
 
@@ -307,13 +300,12 @@ OMX_ERRORTYPE     gst_omx_port_allocate_buffers (GstOMXPort *port);
 OMX_ERRORTYPE     gst_omx_port_deallocate_buffers (GstOMXPort *port);
 OMX_ERRORTYPE     gst_omx_port_wait_buffers_released (GstOMXPort * port, GstClockTime timeout);
 
-OMX_ERRORTYPE     gst_omx_port_reconfigure (GstOMXPort * port);
+OMX_ERRORTYPE     gst_omx_port_mark_reconfigured (GstOMXPort * port);
 
 OMX_ERRORTYPE     gst_omx_port_set_enabled (GstOMXPort * port, gboolean enabled);
 OMX_ERRORTYPE     gst_omx_port_wait_enabled (GstOMXPort * port, GstClockTime timeout);
 gboolean          gst_omx_port_is_enabled (GstOMXPort * port);
 
-OMX_ERRORTYPE     gst_omx_port_manual_reconfigure (GstOMXPort * port, gboolean start);
 
 G_END_DECLS
 
