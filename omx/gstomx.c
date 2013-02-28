@@ -885,6 +885,11 @@ gst_omx_component_add_port (GstOMXComponent * comp, guint32 index)
   port->enabled_pending = FALSE;
   port->disabled_pending = FALSE;
 
+  if (comp->hacks & GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM) {
+    port->min_buffer_count = port->port_def.nBufferCountActual;
+    port->port_def.nBufferCountMin = port->min_buffer_count;
+  }
+
   if (port->port_def.eDir == OMX_DirInput)
     comp->n_in_ports++;
   else
@@ -1146,6 +1151,8 @@ gst_omx_port_get_port_definition (GstOMXPort * port,
 
   gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
       port_def);
+  if (comp->hacks & GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM)
+    port_def->nBufferCountMin = port->min_buffer_count;
 }
 
 gboolean
@@ -1165,6 +1172,9 @@ gst_omx_port_update_port_definition (GstOMXPort * port,
         port_def);
   gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
       &port->port_def);
+
+  if (comp->hacks & GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM)
+    port->port_def.nBufferCountMin = port->min_buffer_count;
 
   GST_DEBUG_OBJECT (comp->parent, "Updated port %u definition: %s (0x%08x)",
       port->index, gst_omx_error_to_string (err), err);
@@ -1593,24 +1603,16 @@ gst_omx_port_allocate_buffers_unlocked (GstOMXPort * port,
    * buffers after the port configuration was done and to
    * update the buffer size
    */
-  gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-      &port->port_def);
+  gst_omx_port_update_port_definition (port, NULL);
 
   g_return_val_if_fail (n == -1 || n >= port->port_def.nBufferCountMin,
       OMX_ErrorBadParameter);
   if (n == -1)
     n = port->port_def.nBufferCountMin;
 
-  /* If the configured, actual number of buffers is less than
-   * the minimal number of buffers required, use the minimal
-   * number of buffers
-   */
   if (port->port_def.nBufferCountActual != n) {
     port->port_def.nBufferCountActual = n;
-    err = gst_omx_component_set_parameter (comp, OMX_IndexParamPortDefinition,
-        &port->port_def);
-    gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-        &port->port_def);
+    gst_omx_port_update_port_definition (port, &port->port_def);
   }
 
   if (err != OMX_ErrorNone) {
@@ -1864,8 +1866,7 @@ gst_omx_port_set_enabled_unlocked (GstOMXPort * port, gboolean enabled)
       (enabled ? "enabled" : "disabled"));
 
   /* Check if the port is already enabled/disabled first */
-  gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-      &port->port_def);
+  gst_omx_port_update_port_definition (port, NULL);
   if (! !port->port_def.bEnabled == ! !enabled)
     goto done;
 
@@ -2067,8 +2068,7 @@ gst_omx_port_wait_enabled_unlocked (GstOMXPort * port, GstClockTime timeout)
   comp = port->comp;
 
   /* Check the current port status */
-  gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-      &port->port_def);
+  gst_omx_port_update_port_definition (port, NULL);
 
   if (port->enabled_pending)
     enabled = TRUE;
@@ -2108,8 +2108,7 @@ gst_omx_port_wait_enabled_unlocked (GstOMXPort * port, GstClockTime timeout)
   /* And now wait until the enable/disable command is finished */
   signalled = TRUE;
   last_error = OMX_ErrorNone;
-  gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-      &port->port_def);
+  gst_omx_port_update_port_definition (port, NULL);
   gst_omx_component_handle_messages (comp);
   while (signalled && last_error == OMX_ErrorNone &&
       (! !port->port_def.bEnabled != ! !enabled || port->enabled_pending
@@ -2131,8 +2130,7 @@ gst_omx_port_wait_enabled_unlocked (GstOMXPort * port, GstClockTime timeout)
     if (signalled)
       gst_omx_component_handle_messages (comp);
     last_error = comp->last_error;
-    gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-        &port->port_def);
+    gst_omx_port_update_port_definition (port, NULL);
   }
   port->enabled_pending = FALSE;
   port->disabled_pending = FALSE;
@@ -2232,8 +2230,7 @@ gst_omx_port_is_enabled (GstOMXPort * port)
 
   comp = port->comp;
 
-  gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
-      &port->port_def);
+  gst_omx_port_update_port_definition (port, NULL);
   enabled = ! !port->port_def.bEnabled;
 
   GST_DEBUG_OBJECT (comp->parent, "Port %u is enabled: %d", port->index,
@@ -2402,7 +2399,7 @@ gst_omx_error_to_string (OMX_ERRORTYPE err)
 }
 
 #if defined(USE_OMX_TARGET_RPI)
-#define DEFAULT_HACKS (GST_OMX_HACK_NO_EMPTY_EOS_BUFFER | GST_OMX_HACK_NO_COMPONENT_ROLE)
+#define DEFAULT_HACKS (GST_OMX_HACK_NO_EMPTY_EOS_BUFFER | GST_OMX_HACK_NO_COMPONENT_ROLE | GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM)
 #else
 #define DEFAULT_HACKS (0)
 #endif
@@ -2434,6 +2431,8 @@ gst_omx_parse_hacks (gchar ** hacks)
       hacks_flags |= GST_OMX_HACK_DRAIN_MAY_NOT_RETURN;
     else if (g_str_equal (*hacks, "no-component-role"))
       hacks_flags |= GST_OMX_HACK_NO_COMPONENT_ROLE;
+    else if (g_str_equal (*hacks, "port-actual-count-is-minimum"))
+      hacks_flags |= GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM;
     else
       GST_WARNING ("Unknown hack: %s", *hacks);
     hacks++;
