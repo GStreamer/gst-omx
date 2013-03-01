@@ -2224,8 +2224,6 @@ done:
   return err;
 }
 
-GQuark gst_omx_element_name_quark = 0;
-
 typedef GType (*GGetTypeFunction) (void);
 
 static const GGetTypeFunction types[] = {
@@ -2558,9 +2556,6 @@ plugin_init (GstPlugin * plugin)
 
   GST_DEBUG_CATEGORY_INIT (gstomx_debug, "omx", 0, "gst-omx");
 
-  gst_omx_element_name_quark =
-      g_quark_from_static_string ("gst-omx-element-name");
-
   /* Read configuration file gstomx.conf from the preferred
    * configuration directories */
   env_config_dir = g_strdup (g_getenv (*env_config_name));
@@ -2691,8 +2686,6 @@ plugin_init (GstPlugin * plugin)
     }
     subtype = g_type_register_static (type, type_name, &type_info, 0);
     g_free (type_name);
-    g_type_set_qdata (subtype, gst_omx_element_name_quark,
-        g_strdup (elements[i]));
     ret |= gst_element_register (plugin, elements[i], rank, subtype);
   }
   g_strfreev (elements);

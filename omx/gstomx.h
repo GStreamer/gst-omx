@@ -264,8 +264,6 @@ struct _GstOMXBuffer {
   gint settings_cookie;
 };
 
-extern GQuark     gst_omx_element_name_quark;
-
 struct _GstOMXClassData {
   const gchar *core_name;
   const gchar *component_name;
