@@ -108,18 +108,12 @@ static void
 gst_omx_aac_enc_base_init (gpointer g_class)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-  GstOMXAudioEncClass *audioenc_class = GST_OMX_AUDIO_ENC_CLASS (g_class);
 
   gst_element_class_set_details_simple (element_class,
       "OpenMAX AAC Audio Encoder",
       "Codec/Encoder/Audio",
       "Encode AAC audio streams",
       "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
-
-  /* If no role was set from the config file we set the
-   * default AAC audio encoder role */
-  if (!audioenc_class->component_role)
-    audioenc_class->component_role = "audio_encoder.aac";
 }
 
 static void
@@ -159,9 +153,11 @@ gst_omx_aac_enc_class_init (GstOMXAACEncClass * klass)
   audioenc_class->get_num_samples =
       GST_DEBUG_FUNCPTR (gst_omx_aac_enc_get_num_samples);
 
-  audioenc_class->default_src_template_caps = "audio/mpeg, "
+  audioenc_class->cdata.default_src_template_caps = "audio/mpeg, "
       "mpegversion=(int){2, 4}, "
       "stream-format=(string){raw, adts, adif, loas, latm}";
+
+  gst_omx_set_default_role (&audioenc_class->cdata, "audio_encoder.aac");
 }
 
 static void
@@ -251,6 +247,7 @@ gst_omx_aac_enc_set_format (GstOMXAudioEnc * enc, GstOMXPort * port,
         gst_caps_intersect (peercaps,
         gst_pad_get_pad_template_caps (GST_AUDIO_ENCODER_SRC_PAD (self)));
     gst_caps_unref (peercaps);
+
     if (gst_caps_is_empty (intersection)) {
       gst_caps_unref (intersection);
       GST_ERROR_OBJECT (self, "Empty caps");

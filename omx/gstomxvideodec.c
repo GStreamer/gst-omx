@@ -81,136 +81,6 @@ GST_BOILERPLATE_FULL (GstOMXVideoDec, gst_omx_video_dec, GstVideoDecoder,
 static void
 gst_omx_video_dec_base_init (gpointer g_class)
 {
-  GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-  GstOMXVideoDecClass *videodec_class = GST_OMX_VIDEO_DEC_CLASS (g_class);
-  GKeyFile *config;
-  const gchar *element_name;
-  GError *err;
-  gchar *core_name, *component_name, *component_role;
-  gint in_port_index, out_port_index;
-  gchar *template_caps;
-  GstPadTemplate *templ;
-  GstCaps *caps;
-  gchar **hacks;
-
-  element_name =
-      g_type_get_qdata (G_TYPE_FROM_CLASS (g_class),
-      gst_omx_element_name_quark);
-  /* This happens for the base class and abstract subclasses */
-  if (!element_name)
-    return;
-
-  config = gst_omx_get_configuration ();
-
-  /* This will always succeed, see check in plugin_init */
-  core_name = g_key_file_get_string (config, element_name, "core-name", NULL);
-  g_assert (core_name != NULL);
-  videodec_class->core_name = core_name;
-  component_name =
-      g_key_file_get_string (config, element_name, "component-name", NULL);
-  g_assert (component_name != NULL);
-  videodec_class->component_name = component_name;
-
-  /* If this fails we simply don't set a role */
-  if ((component_role =
-          g_key_file_get_string (config, element_name, "component-role",
-              NULL))) {
-    GST_DEBUG ("Using component-role '%s' for element '%s'", component_role,
-        element_name);
-    videodec_class->component_role = component_role;
-  }
-
-
-  /* Now set the inport/outport indizes and assume sane defaults */
-  err = NULL;
-  in_port_index =
-      g_key_file_get_integer (config, element_name, "in-port-index", &err);
-  if (err != NULL) {
-    GST_DEBUG ("No 'in-port-index' set for element '%s', assuming auto-detecting: %s",
-        element_name, err->message);
-    in_port_index = -1;
-    g_error_free (err);
-  }
-  videodec_class->in_port_index = in_port_index;
-
-  err = NULL;
-  out_port_index =
-      g_key_file_get_integer (config, element_name, "out-port-index", &err);
-  if (err != NULL) {
-    GST_DEBUG ("No 'out-port-index' set for element '%s', assuming auto-detecting: %s",
-        element_name, err->message);
-    out_port_index = -1;
-    g_error_free (err);
-  }
-  videodec_class->out_port_index = out_port_index;
-
-  /* Add pad templates */
-  err = NULL;
-  if (!(template_caps =
-          g_key_file_get_string (config, element_name, "sink-template-caps",
-              &err))) {
-    GST_DEBUG
-        ("No sink template caps specified for element '%s', using default '%s'",
-        element_name, videodec_class->default_sink_template_caps);
-    caps = gst_caps_from_string (videodec_class->default_sink_template_caps);
-    g_assert (caps != NULL);
-    g_error_free (err);
-  } else {
-    caps = gst_caps_from_string (template_caps);
-    if (!caps) {
-      GST_DEBUG
-          ("Could not parse sink template caps '%s' for element '%s', using default '%s'",
-          template_caps, element_name,
-          videodec_class->default_sink_template_caps);
-      caps = gst_caps_from_string (videodec_class->default_sink_template_caps);
-      g_assert (caps != NULL);
-    }
-  }
-  templ = gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS, caps);
-  g_free (template_caps);
-  gst_element_class_add_pad_template (element_class, templ);
-  gst_object_unref (templ);
-
-  err = NULL;
-  if (!(template_caps =
-          g_key_file_get_string (config, element_name, "src-template-caps",
-              &err))) {
-    GST_DEBUG
-        ("No src template caps specified for element '%s', using default '%s'",
-        element_name, videodec_class->default_src_template_caps);
-    caps = gst_caps_from_string (videodec_class->default_src_template_caps);
-    g_assert (caps != NULL);
-    g_error_free (err);
-  } else {
-    caps = gst_caps_from_string (template_caps);
-    if (!caps) {
-      GST_DEBUG
-          ("Could not parse src template caps '%s' for element '%s', using default '%s'",
-          template_caps, element_name,
-          videodec_class->default_src_template_caps);
-      caps = gst_caps_from_string (videodec_class->default_src_template_caps);
-      g_assert (caps != NULL);
-    }
-  }
-  templ = gst_pad_template_new ("src", GST_PAD_SRC, GST_PAD_ALWAYS, caps);
-  g_free (template_caps);
-  gst_element_class_add_pad_template (element_class, templ);
-  gst_object_unref (templ);
-
-  if ((hacks =
-          g_key_file_get_string_list (config, element_name, "hacks", NULL,
-              NULL))) {
-#ifndef GST_DISABLE_GST_DEBUG
-    gchar **walk = hacks;
-
-    while (*walk) {
-      GST_DEBUG ("Using hack: %s", *walk);
-      walk++;
-    }
-#endif
-
-    videodec_class->hacks = gst_omx_parse_hacks (hacks);
-  }
 }
 
 static void
@@ -236,7 +106,7 @@ gst_omx_video_dec_class_init (GstOMXVideoDecClass * klass)
       GST_DEBUG_FUNCPTR (gst_omx_video_dec_handle_frame);
   video_decoder_class->finish = GST_DEBUG_FUNCPTR (gst_omx_video_dec_finish);
 
-  klass->default_src_template_caps = "video/x-raw-yuv, "
+  klass->cdata.default_src_template_caps = "video/x-raw-yuv, "
       "width = " GST_VIDEO_SIZE_RANGE ", "
       "height = " GST_VIDEO_SIZE_RANGE ", " "framerate = " GST_VIDEO_FPS_RANGE;
 }
@@ -260,8 +130,9 @@ gst_omx_video_dec_open (GstVideoDecoder * decoder)
   GST_DEBUG_OBJECT (self, "Opening decoder");
 
   self->dec =
-      gst_omx_component_new (GST_OBJECT_CAST (self), klass->core_name,
-      klass->component_name, klass->component_role, klass->hacks);
+      gst_omx_component_new (GST_OBJECT_CAST (self), klass->cdata.core_name,
+      klass->cdata.component_name, klass->cdata.component_role,
+      klass->cdata.hacks);
   self->started = FALSE;
 
   if (!self->dec)
@@ -271,8 +142,8 @@ gst_omx_video_dec_open (GstVideoDecoder * decoder)
           GST_CLOCK_TIME_NONE) != OMX_StateLoaded)
     return FALSE;
 
-  in_port_index = klass->in_port_index;
-  out_port_index = klass->out_port_index;
+  in_port_index = klass->cdata.in_port_index;
+  out_port_index = klass->cdata.out_port_index;
 
   if (in_port_index == -1 || out_port_index == -1) {
     OMX_PORT_PARAM_TYPE param;
@@ -863,7 +734,8 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
 
       flow_ret = gst_pad_push (GST_VIDEO_DECODER_SRC_PAD (self), outbuf);
     } else if (buf->omx_buf->nFilledLen > 0) {
-      if ((flow_ret = gst_video_decoder_alloc_output_frame (GST_VIDEO_DECODER
+      if ((flow_ret =
+              gst_video_decoder_alloc_output_frame (GST_VIDEO_DECODER
                   (self), frame)) == GST_FLOW_OK) {
         /* FIXME: This currently happens because of a race condition too.
          * We first need to reconfigure the output port and then the input
@@ -908,7 +780,7 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
 
     self->downstream_flow_ret = flow_ret;
   } else {
-    g_assert ((klass->hacks & GST_OMX_HACK_NO_EMPTY_EOS_BUFFER));
+    g_assert ((klass->cdata.hacks & GST_OMX_HACK_NO_EMPTY_EOS_BUFFER));
     GST_VIDEO_DECODER_STREAM_LOCK (self);
     flow_ret = GST_FLOW_UNEXPECTED;
   }
@@ -1284,7 +1156,7 @@ gst_omx_video_dec_set_format (GstVideoDecoder * decoder,
 
     gst_omx_video_dec_drain (self, FALSE);
 
-    if (klass->hacks & GST_OMX_HACK_NO_COMPONENT_RECONFIGURE) {
+    if (klass->cdata.hacks & GST_OMX_HACK_NO_COMPONENT_RECONFIGURE) {
       GST_VIDEO_DECODER_STREAM_UNLOCK (self);
       gst_omx_video_dec_stop (GST_VIDEO_DECODER (self));
       gst_omx_video_dec_close (GST_VIDEO_DECODER (self));
@@ -1740,7 +1612,7 @@ gst_omx_video_dec_drain (GstOMXVideoDec * self, gboolean is_eos)
   if (is_eos)
     self->eos = TRUE;
 
-  if ((klass->hacks & GST_OMX_HACK_NO_EMPTY_EOS_BUFFER)) {
+  if ((klass->cdata.hacks & GST_OMX_HACK_NO_EMPTY_EOS_BUFFER)) {
     GST_WARNING_OBJECT (self, "Component does not support empty EOS buffers");
     return GST_FLOW_OK;
   }

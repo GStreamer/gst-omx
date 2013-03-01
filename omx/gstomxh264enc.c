@@ -55,18 +55,12 @@ static void
 gst_omx_h264_enc_base_init (gpointer g_class)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-  GstOMXVideoEncClass *videoenc_class = GST_OMX_VIDEO_ENC_CLASS (g_class);
 
   gst_element_class_set_details_simple (element_class,
       "OpenMAX H.264 Video Encoder",
       "Codec/Encoder/Video",
       "Encode H.264 video streams",
       "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
-
-  /* If no role was set from the config file we set the
-   * default H264 video encoder role */
-  if (!videoenc_class->component_role)
-    videoenc_class->component_role = "video_encoder.avc";
 }
 
 static void
@@ -77,10 +71,12 @@ gst_omx_h264_enc_class_init (GstOMXH264EncClass * klass)
   videoenc_class->set_format = GST_DEBUG_FUNCPTR (gst_omx_h264_enc_set_format);
   videoenc_class->get_caps = GST_DEBUG_FUNCPTR (gst_omx_h264_enc_get_caps);
 
-  videoenc_class->default_src_template_caps = "video/x-h264, "
+  videoenc_class->cdata.default_src_template_caps = "video/x-h264, "
       "width=(int) [ 16, 4096 ], " "height=(int) [ 16, 4096 ]";
   videoenc_class->handle_output_frame =
       GST_DEBUG_FUNCPTR (gst_omx_h264_enc_handle_output_frame);
+
+  gst_omx_set_default_role (&videoenc_class->cdata, "video_encoder.avc");
 }
 
 static void

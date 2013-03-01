@@ -53,18 +53,12 @@ static void
 gst_omx_mpeg2_dec_base_init (gpointer g_class)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-  GstOMXVideoDecClass *videodec_class = GST_OMX_VIDEO_DEC_CLASS (g_class);
 
   gst_element_class_set_details_simple (element_class,
       "OpenMAX MPEG2 Video Decoder",
       "Codec/Decoder/Video",
       "Decode MPEG2 video streams",
       "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
-
-  /* If no role was set from the config file we set the
-   * default MPEG2 video decoder role */
-  if (!videodec_class->component_role)
-    videodec_class->component_role = "video_decoder.mpeg2";
 }
 
 static void
@@ -76,9 +70,11 @@ gst_omx_mpeg2_dec_class_init (GstOMXMPEG2DecClass * klass)
       GST_DEBUG_FUNCPTR (gst_omx_mpeg2_dec_is_format_change);
   videodec_class->set_format = GST_DEBUG_FUNCPTR (gst_omx_mpeg2_dec_set_format);
 
-  videodec_class->default_sink_template_caps = "video/mpeg, "
+  videodec_class->cdata.default_sink_template_caps = "video/mpeg, "
       "mpegversion=(int) 2, "
       "systemstream=(boolean) false, " "parsed=(boolean) true";
+
+  gst_omx_set_default_role (&videodec_class->cdata, "video_decoder.mpeg2");
 }
 
 static void

@@ -53,7 +53,6 @@ static void
 gst_omx_h264_dec_base_init (gpointer g_class)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-  GstOMXVideoDecClass *videodec_class = GST_OMX_VIDEO_DEC_CLASS (g_class);
 
   gst_element_class_set_details_simple (element_class,
       "OpenMAX H.264 Video Decoder",
@@ -61,10 +60,6 @@ gst_omx_h264_dec_base_init (gpointer g_class)
       "Decode H.264 video streams",
       "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
 
-  /* If no role was set from the config file we set the
-   * default H.264 video decoder role */
-  if (!videodec_class->component_role)
-    videodec_class->component_role = "video_decoder.avc";
 }
 
 static void
@@ -76,9 +71,11 @@ gst_omx_h264_dec_class_init (GstOMXH264DecClass * klass)
       GST_DEBUG_FUNCPTR (gst_omx_h264_dec_is_format_change);
   videodec_class->set_format = GST_DEBUG_FUNCPTR (gst_omx_h264_dec_set_format);
 
-  videodec_class->default_sink_template_caps = "video/x-h264, "
+  videodec_class->cdata.default_sink_template_caps = "video/x-h264, "
       "parsed=(boolean) true, "
       "alignment=(string)au, " "stream-format=(string) byte-stream";
+
+  gst_omx_set_default_role (&videodec_class->cdata, "video_decoder.avc");
 }
 
 static void

@@ -53,18 +53,12 @@ static void
 gst_omx_h263_dec_base_init (gpointer g_class)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-  GstOMXVideoDecClass *videodec_class = GST_OMX_VIDEO_DEC_CLASS (g_class);
 
   gst_element_class_set_details_simple (element_class,
       "OpenMAX H.263 Video Decoder",
       "Codec/Decoder/Video",
       "Decode H.263 video streams",
       "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
-
-  /* If no role was set from the config file we set the
-   * default H.263 video decoder role */
-  if (!videodec_class->component_role)
-    videodec_class->component_role = "video_decoder.h263";
 }
 
 static void
@@ -76,8 +70,10 @@ gst_omx_h263_dec_class_init (GstOMXH263DecClass * klass)
       GST_DEBUG_FUNCPTR (gst_omx_h263_dec_is_format_change);
   videodec_class->set_format = GST_DEBUG_FUNCPTR (gst_omx_h263_dec_set_format);
 
-  videodec_class->default_sink_template_caps = "video/x-h263, "
+  videodec_class->cdata.default_sink_template_caps = "video/x-h263, "
       "parsed=(boolean) true";
+
+  gst_omx_set_default_role (&videodec_class->cdata, "video_decoder.h263");
 }
 
 static void

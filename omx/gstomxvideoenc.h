@@ -58,6 +58,9 @@ struct _GstOMXVideoEnc
   GstVideoEncoder parent;
 
   /* < protected > */
+
+  GstOMXClassData cdata;
+
   GstOMXComponent *enc;
   GstOMXPort *enc_in_port, *enc_out_port;
 
@@ -92,16 +95,7 @@ struct _GstOMXVideoEncClass
 {
   GstVideoEncoderClass parent_class;
 
-  const gchar *core_name;
-  const gchar *component_name;
-  const gchar *component_role;
-
-  const gchar *default_src_template_caps;
-  const gchar *default_sink_template_caps;
-  
-  guint32 in_port_index, out_port_index;
-
-  guint64 hacks;
+  GstOMXClassData cdata;
 
   gboolean            (*set_format)          (GstOMXVideoEnc * self, GstOMXPort * port, GstVideoCodecState * state);
   GstCaps            *(*get_caps)           (GstOMXVideoEnc * self, GstOMXPort * port, GstVideoCodecState * state);

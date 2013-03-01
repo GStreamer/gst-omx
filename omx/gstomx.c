@@ -367,6 +367,7 @@ gst_omx_component_handle_messages (GstOMXComponent * comp)
     }
 
     g_slice_free (GstOMXMessage, msg);
+
     g_mutex_lock (comp->messages_lock);
   }
 
@@ -2235,6 +2236,18 @@ static const GGetTypeFunction types[] = {
   gst_omx_aac_enc_get_type
 };
 
+struct TypeOffest
+{
+  GType (*get_type) (void);
+  glong offset;
+};
+
+static const struct TypeOffest base_types[] = {
+  {gst_omx_video_dec_get_type, G_STRUCT_OFFSET (GstOMXVideoDecClass, cdata)},
+  {gst_omx_video_enc_get_type, G_STRUCT_OFFSET (GstOMXVideoEncClass, cdata)},
+  {gst_omx_audio_enc_get_type, G_STRUCT_OFFSET (GstOMXAudioEncClass, cdata)},
+};
+
 static GKeyFile *config = NULL;
 GKeyFile *
 gst_omx_get_configuration (void)
@@ -2378,6 +2391,156 @@ gst_omx_parse_hacks (gchar ** hacks)
   return hacks_flags;
 }
 
+
+void
+gst_omx_set_default_role (GstOMXClassData * class_data,
+    const gchar * default_role)
+{
+  if (!class_data->component_role)
+    class_data->component_role = default_role;
+}
+
+static void
+_class_init (gpointer g_class, gpointer data)
+{
+  GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
+  GstOMXClassData *class_data = NULL;
+  GKeyFile *config;
+  const gchar *element_name = data;
+  GError *err;
+  gchar *core_name, *component_name, *component_role;
+  gint in_port_index, out_port_index;
+  gchar *template_caps;
+  GstPadTemplate *templ;
+  GstCaps *caps;
+  gchar **hacks;
+  int i;
+
+  if (!element_name)
+    return;
+
+  /* Find the GstOMXClassData for this class */
+  for (i = 0; i < G_N_ELEMENTS (base_types); i++) {
+    GType gtype = base_types[i].get_type ();
+
+    if (G_TYPE_CHECK_CLASS_TYPE (g_class, gtype)) {
+      class_data = (GstOMXClassData *)
+          (((guint8 *) g_class) + base_types[i].offset);
+      break;
+    }
+  }
+
+  g_assert (class_data != NULL);
+
+  config = gst_omx_get_configuration ();
+
+  /* This will alwaxys succeed, see check in plugin_init */
+  core_name = g_key_file_get_string (config, element_name, "core-name", NULL);
+  g_assert (core_name != NULL);
+  class_data->core_name = core_name;
+  component_name =
+      g_key_file_get_string (config, element_name, "component-name", NULL);
+  g_assert (component_name != NULL);
+  class_data->component_name = component_name;
+
+  /* If this fails we simply don't set a role */
+  if ((component_role =
+          g_key_file_get_string (config, element_name, "component-role",
+              NULL))) {
+    GST_DEBUG ("Using component-role '%s' for element '%s'", component_role,
+        element_name);
+    class_data->component_role = component_role;
+  }
+
+
+  /* Now set the inport/outport indizes and assume sane defaults */
+  err = NULL;
+  in_port_index =
+      g_key_file_get_integer (config, element_name, "in-port-index", &err);
+  if (err != NULL) {
+    GST_DEBUG ("No 'in-port-index' set for element '%s', auto-detecting: %s",
+        element_name, err->message);
+    in_port_index = -1;
+    g_error_free (err);
+  }
+  class_data->in_port_index = in_port_index;
+
+  err = NULL;
+  out_port_index =
+      g_key_file_get_integer (config, element_name, "out-port-index", &err);
+  if (err != NULL) {
+    GST_DEBUG ("No 'out-port-index' set for element '%s', auto-detecting: %s",
+        element_name, err->message);
+    out_port_index = -1;
+    g_error_free (err);
+  }
+  class_data->out_port_index = out_port_index;
+
+  /* Add pad templates */
+  err = NULL;
+  if (!(template_caps =
+          g_key_file_get_string (config, element_name, "sink-template-caps",
+              &err))) {
+    GST_DEBUG
+        ("No sink template caps specified for element '%s', using default '%s'",
+        element_name, class_data->default_sink_template_caps);
+    caps = gst_caps_from_string (class_data->default_sink_template_caps);
+    g_assert (caps != NULL);
+    g_error_free (err);
+  } else {
+    caps = gst_caps_from_string (template_caps);
+    if (!caps) {
+      GST_DEBUG
+          ("Could not parse sink template caps '%s' for element '%s', using default '%s'",
+          template_caps, element_name, class_data->default_sink_template_caps);
+      caps = gst_caps_from_string (class_data->default_sink_template_caps);
+      g_assert (caps != NULL);
+    }
+  }
+  templ = gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS, caps);
+  g_free (template_caps);
+  gst_element_class_add_pad_template (element_class, templ);
+
+  err = NULL;
+  if (!(template_caps =
+          g_key_file_get_string (config, element_name, "src-template-caps",
+              &err))) {
+    GST_DEBUG
+        ("No src template caps specified for element '%s', using default '%s'",
+        element_name, class_data->default_src_template_caps);
+    caps = gst_caps_from_string (class_data->default_src_template_caps);
+    g_assert (caps != NULL);
+    g_error_free (err);
+  } else {
+    caps = gst_caps_from_string (template_caps);
+    if (!caps) {
+      GST_DEBUG
+          ("Could not parse src template caps '%s' for element '%s', using default '%s'",
+          template_caps, element_name, class_data->default_src_template_caps);
+      caps = gst_caps_from_string (class_data->default_src_template_caps);
+      g_assert (caps != NULL);
+    }
+  }
+  templ = gst_pad_template_new ("src", GST_PAD_SRC, GST_PAD_ALWAYS, caps);
+  g_free (template_caps);
+  gst_element_class_add_pad_template (element_class, templ);
+
+  if ((hacks =
+          g_key_file_get_string_list (config, element_name, "hacks", NULL,
+              NULL))) {
+#ifndef GST_DISABLE_GST_DEBUG
+    gchar **walk = hacks;
+
+    while (*walk) {
+      GST_DEBUG ("Using hack: %s", *walk);
+      walk++;
+    }
+#endif
+
+    class_data->hacks = gst_omx_parse_hacks (hacks);
+  }
+}
+
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
@@ -2517,6 +2680,8 @@ plugin_init (GstPlugin * plugin)
     memset (&type_info, 0, sizeof (type_info));
     type_info.class_size = type_query.class_size;
     type_info.instance_size = type_query.instance_size;
+    type_info.class_init = _class_init;
+    type_info.class_data = g_strdup (elements[i]);
     type_name = g_strdup_printf ("%s-%s", g_type_name (type), elements[i]);
     if (g_type_from_name (type_name) != G_TYPE_INVALID) {
       GST_ERROR ("Type '%s' already exists for element '%s'", type_name,

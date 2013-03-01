@@ -23,6 +23,7 @@
 #ifndef __GST_OMX_H__
 #define __GST_OMX_H__
 
+#include <gmodule.h>
 #include <gst/gst.h>
 #include <string.h>
 
@@ -125,6 +126,7 @@ typedef struct _GstOMXPort GstOMXPort;
 typedef enum _GstOMXPortDirection GstOMXPortDirection;
 typedef struct _GstOMXComponent GstOMXComponent;
 typedef struct _GstOMXBuffer GstOMXBuffer;
+typedef struct _GstOMXClassData GstOMXClassData;
 typedef struct _GstOMXMessage GstOMXMessage;
 
 typedef enum {
@@ -264,6 +266,19 @@ struct _GstOMXBuffer {
 
 extern GQuark     gst_omx_element_name_quark;
 
+struct _GstOMXClassData {
+  const gchar *core_name;
+  const gchar *component_name;
+  const gchar *component_role;
+
+  const gchar *default_src_template_caps;
+  const gchar *default_sink_template_caps;
+
+  guint32 in_port_index, out_port_index;
+
+  guint64 hacks;
+};
+
 GKeyFile *        gst_omx_get_configuration (void);
 
 const gchar *     gst_omx_error_to_string (OMX_ERRORTYPE err);
@@ -314,6 +329,9 @@ OMX_ERRORTYPE     gst_omx_port_mark_reconfigured (GstOMXPort * port);
 OMX_ERRORTYPE     gst_omx_port_set_enabled (GstOMXPort * port, gboolean enabled);
 OMX_ERRORTYPE     gst_omx_port_wait_enabled (GstOMXPort * port, GstClockTime timeout);
 gboolean          gst_omx_port_is_enabled (GstOMXPort * port);
+
+
+void              gst_omx_set_default_role (GstOMXClassData *class_data, const gchar *default_role);
 
 
 G_END_DECLS
