@@ -1645,9 +1645,12 @@ gst_omx_video_dec_drain (GstOMXVideoDec * self, gboolean is_eos)
   GST_DEBUG_OBJECT (self, "Waiting until component is drained");
 
   if (G_UNLIKELY (self->dec->hacks & GST_OMX_HACK_DRAIN_MAY_NOT_RETURN)) {
-    GTimeVal tv = {.tv_sec = 0,.tv_usec = 500000 };
+    GTimeVal timeval;
 
-    if (!g_cond_timed_wait (self->drain_cond, self->drain_lock, &tv))
+    g_get_current_time (&timeval);
+    g_time_val_add (&timeval, (G_USEC_PER_SEC / 2));
+
+    if (!g_cond_timed_wait (self->drain_cond, self->drain_lock, &timeval))
       GST_WARNING_OBJECT (self, "Drain timed out");
     else
       GST_DEBUG_OBJECT (self, "Drained component");
