@@ -880,11 +880,6 @@ gst_omx_component_add_port (GstOMXComponent * comp, guint32 index)
   port->enabled_pending = FALSE;
   port->disabled_pending = FALSE;
 
-  if (comp->hacks & GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM) {
-    port->min_buffer_count = port->port_def.nBufferCountActual;
-    port->port_def.nBufferCountMin = port->min_buffer_count;
-  }
-
   if (port->port_def.eDir == OMX_DirInput)
     comp->n_in_ports++;
   else
@@ -1125,8 +1120,6 @@ gst_omx_port_get_port_definition (GstOMXPort * port,
 
   err = gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
       port_def);
-  if (comp->hacks & GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM)
-    port_def->nBufferCountMin = port->min_buffer_count;
 
   return err;
 }
@@ -1148,9 +1141,6 @@ gst_omx_port_update_port_definition (GstOMXPort * port,
         port_def);
   gst_omx_component_get_parameter (comp, OMX_IndexParamPortDefinition,
       &port->port_def);
-
-  if (comp->hacks & GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM)
-    port->port_def.nBufferCountMin = port->min_buffer_count;
 
   GST_DEBUG_OBJECT (comp->parent, "Updated port %u definition: %s (0x%08x)",
       port->index, gst_omx_error_to_string (err), err);
@@ -2336,7 +2326,7 @@ gst_omx_error_to_string (OMX_ERRORTYPE err)
 }
 
 #if defined(USE_OMX_TARGET_RPI)
-#define DEFAULT_HACKS (GST_OMX_HACK_NO_EMPTY_EOS_BUFFER | GST_OMX_HACK_NO_COMPONENT_ROLE | GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM | GST_OMX_HACK_NO_COMPONENT_RECONFIGURE)
+#define DEFAULT_HACKS (GST_OMX_HACK_NO_EMPTY_EOS_BUFFER | GST_OMX_HACK_NO_COMPONENT_ROLE | GST_OMX_HACK_NO_COMPONENT_RECONFIGURE)
 #else
 #define DEFAULT_HACKS (0)
 #endif
@@ -2368,8 +2358,6 @@ gst_omx_parse_hacks (gchar ** hacks)
       hacks_flags |= GST_OMX_HACK_DRAIN_MAY_NOT_RETURN;
     else if (g_str_equal (*hacks, "no-component-role"))
       hacks_flags |= GST_OMX_HACK_NO_COMPONENT_ROLE;
-    else if (g_str_equal (*hacks, "port-actual-count-is-minimum"))
-      hacks_flags |= GST_OMX_HACK_PORT_ACTUAL_COUNT_IS_MINIMUM;
     else
       GST_WARNING ("Unknown hack: %s", *hacks);
     hacks++;
