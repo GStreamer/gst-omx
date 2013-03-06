@@ -87,8 +87,7 @@ gst_omx_audio_enc_class_init (GstOMXAudioEncClass * klass)
       GST_DEBUG_FUNCPTR (gst_omx_audio_enc_set_format);
   audio_encoder_class->handle_frame =
       GST_DEBUG_FUNCPTR (gst_omx_audio_enc_handle_frame);
-  audio_encoder_class->event =
-      GST_DEBUG_FUNCPTR (gst_omx_audio_enc_sink_event);
+  audio_encoder_class->event = GST_DEBUG_FUNCPTR (gst_omx_audio_enc_sink_event);
 
   klass->cdata.default_sink_template_caps = "audio/x-raw-int, "
       "rate = (int) [ 1, MAX ], "
@@ -380,7 +379,7 @@ gst_omx_audio_enc_loop (GstOMXAudioEnc * self)
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
-      err = gst_omx_port_allocate_buffers (port, -1);
+      err = gst_omx_port_allocate_buffers (port);
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
@@ -752,7 +751,7 @@ gst_omx_audio_enc_set_format (GstAudioEncoder * encoder, GstAudioInfo * info)
   if (needs_disable) {
     if (gst_omx_port_set_enabled (self->enc_in_port, TRUE) != OMX_ErrorNone)
       return FALSE;
-    if (gst_omx_port_allocate_buffers (self->enc_in_port, -1) != OMX_ErrorNone)
+    if (gst_omx_port_allocate_buffers (self->enc_in_port) != OMX_ErrorNone)
       return FALSE;
     if (gst_omx_port_wait_enabled (self->enc_in_port,
             5 * GST_SECOND) != OMX_ErrorNone)
@@ -764,7 +763,7 @@ gst_omx_audio_enc_set_format (GstAudioEncoder * encoder, GstAudioInfo * info)
       return FALSE;
 
     /* Need to allocate buffers to reach Idle state */
-    if (gst_omx_port_allocate_buffers (self->enc_in_port, -1) != OMX_ErrorNone)
+    if (gst_omx_port_allocate_buffers (self->enc_in_port) != OMX_ErrorNone)
       return FALSE;
 
     /* And disable output port */
@@ -919,7 +918,7 @@ gst_omx_audio_enc_handle_frame (GstAudioEncoder * encoder, GstBuffer * inbuf)
         goto reconfigure_error;
       }
 
-      err = gst_omx_port_allocate_buffers (port, -1);
+      err = gst_omx_port_allocate_buffers (port);
       if (err != OMX_ErrorNone) {
         GST_AUDIO_ENCODER_STREAM_LOCK (self);
         goto reconfigure_error;

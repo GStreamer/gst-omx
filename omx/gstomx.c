@@ -802,8 +802,7 @@ gst_omx_component_get_state (GstOMXComponent * comp, GstClockTime timeout)
       signalled = TRUE;
     } else {
       signalled =
-          g_cond_timed_wait (comp->messages_cond, comp->messages_lock,
-          timeval);
+          g_cond_timed_wait (comp->messages_cond, comp->messages_lock, timeval);
     }
     g_mutex_unlock (comp->messages_lock);
     g_mutex_lock (comp->lock);
@@ -1574,22 +1573,14 @@ gst_omx_port_allocate_buffers_unlocked (GstOMXPort * port,
    */
   gst_omx_port_update_port_definition (port, NULL);
 
-  g_return_val_if_fail (n == -1 || n >= port->port_def.nBufferCountMin,
-      OMX_ErrorBadParameter);
+  g_return_val_if_fail (n != -1 || (!buffers
+          && !images), OMX_ErrorBadParameter);
+
   if (n == -1)
-    n = port->port_def.nBufferCountMin;
+    n = port->port_def.nBufferCountActual;
 
-  if (port->port_def.nBufferCountActual != n) {
-    port->port_def.nBufferCountActual = n;
-    err = gst_omx_port_update_port_definition (port, &port->port_def);
-  }
-
-  if (err != OMX_ErrorNone) {
-    GST_ERROR_OBJECT (comp->parent,
-        "Failed to configure number of buffers of port %u: %s (0x%08x)",
-        port->index, gst_omx_error_to_string (err), err);
-    goto done;
-  }
+  g_return_val_if_fail (n == port->port_def.nBufferCountActual,
+      OMX_ErrorBadParameter);
 
   GST_DEBUG_OBJECT (comp->parent,
       "Allocating %d buffers of size %u for port %u", n,
@@ -1654,14 +1645,14 @@ done:
 
 /* NOTE: Uses comp->lock and comp->messages_lock */
 OMX_ERRORTYPE
-gst_omx_port_allocate_buffers (GstOMXPort * port, guint n)
+gst_omx_port_allocate_buffers (GstOMXPort * port)
 {
   OMX_ERRORTYPE err;
 
   g_return_val_if_fail (port != NULL, OMX_ErrorUndefined);
 
   g_mutex_lock (port->comp->lock);
-  err = gst_omx_port_allocate_buffers_unlocked (port, NULL, NULL, n);
+  err = gst_omx_port_allocate_buffers_unlocked (port, NULL, NULL, -1);
   g_mutex_unlock (port->comp->lock);
 
   return err;
@@ -1932,8 +1923,7 @@ gst_omx_port_wait_buffers_released_unlocked (GstOMXPort * port,
       signalled = TRUE;
     } else if (timeout != GST_CLOCK_TIME_NONE) {
       signalled =
-          g_cond_timed_wait (comp->messages_cond, comp->messages_lock,
-          timeval);
+          g_cond_timed_wait (comp->messages_cond, comp->messages_lock, timeval);
     } else {
       signalled = TRUE;
       g_cond_wait (comp->messages_cond, comp->messages_lock);
@@ -2065,8 +2055,7 @@ gst_omx_port_wait_enabled_unlocked (GstOMXPort * port, GstClockTime timeout)
       signalled = TRUE;
     } else if (timeout != GST_CLOCK_TIME_NONE) {
       signalled =
-          g_cond_timed_wait (comp->messages_cond, comp->messages_lock,
-          timeval);
+          g_cond_timed_wait (comp->messages_cond, comp->messages_lock, timeval);
     } else {
       signalled = TRUE;
       g_cond_wait (comp->messages_cond, comp->messages_lock);
@@ -2696,6 +2685,7 @@ done:
 
   return ret;
 }
+
 #ifdef GST_PLUGIN_DEFINE2
 GST_PLUGIN_DEFINE2 (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
