@@ -657,15 +657,8 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
     GST_VIDEO_DECODER_STREAM_UNLOCK (self);
 
     if (acq_return == GST_OMX_ACQUIRE_BUFFER_RECONFIGURE) {
-      err = gst_omx_port_set_enabled (port, TRUE);
-      if (err != OMX_ErrorNone)
-        goto reconfigure_error;
-
       err = gst_omx_port_allocate_buffers (port);
-      if (err != OMX_ErrorNone)
-        goto reconfigure_error;
 
-      err = gst_omx_port_wait_enabled (port, 5 * GST_SECOND);
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
