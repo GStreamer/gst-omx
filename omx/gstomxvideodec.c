@@ -766,6 +766,10 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
+      err = gst_omx_port_populate (port);
+      if (err != OMX_ErrorNone)
+        goto reconfigure_error;
+
       err = gst_omx_port_mark_reconfigured (port);
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
@@ -1362,6 +1366,10 @@ gst_omx_video_dec_set_format (GstVideoDecoder * decoder,
     return FALSE;
   }
 
+  if (!needs_disable)
+    if (gst_omx_port_populate (self->dec_out_port) != OMX_ErrorNone)
+      return FALSE;
+
   /* Start the srcpad loop again */
   GST_DEBUG_OBJECT (self, "Starting task again");
 
@@ -1396,6 +1404,7 @@ gst_omx_video_dec_reset (GstVideoDecoder * decoder, gboolean hard)
 
   gst_omx_port_set_flushing (self->dec_in_port, 5 * GST_SECOND, FALSE);
   gst_omx_port_set_flushing (self->dec_out_port, 5 * GST_SECOND, FALSE);
+  gst_omx_port_populate (self->dec_out_port);
 
   /* Start the srcpad loop again */
   self->last_upstream_ts = 0;
