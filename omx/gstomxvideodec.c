@@ -64,6 +64,11 @@ static GstFlowReturn gst_omx_video_dec_finish (GstVideoDecoder * decoder);
 static GstFlowReturn gst_omx_video_dec_drain (GstOMXVideoDec * self,
     gboolean is_eos);
 
+static OMX_ERRORTYPE gst_omx_video_dec_allocate_output_buffers (GstOMXVideoDec *
+    self);
+static OMX_ERRORTYPE gst_omx_video_dec_deallocate_output_buffers (GstOMXVideoDec
+    * self);
+
 enum
 {
   PROP_0
@@ -193,7 +198,7 @@ gst_omx_video_dec_shutdown (GstOMXVideoDec * self)
     }
     gst_omx_component_set_state (self->dec, OMX_StateLoaded);
     gst_omx_port_deallocate_buffers (self->dec_in_port);
-    gst_omx_port_deallocate_buffers (self->dec_out_port);
+    gst_omx_video_dec_deallocate_output_buffers (self);
     if (state > OMX_StateLoaded)
       gst_omx_component_get_state (self->dec, 5 * GST_SECOND);
   }
@@ -554,6 +559,106 @@ done:
   return ret;
 }
 
+static OMX_ERRORTYPE
+gst_omx_video_dec_allocate_output_buffers (GstOMXVideoDec * self)
+{
+  OMX_ERRORTYPE err = OMX_ErrorNone;
+  GstOMXPort *port;
+  guint min;
+  gboolean was_enabled = TRUE;
+
+  port = self->dec_out_port;
+
+  min = MAX (1, port->port_def.nBufferCountMin);
+
+  if (min != port->port_def.nBufferCountActual) {
+    err = gst_omx_port_update_port_definition (port, NULL);
+    if (err == OMX_ErrorNone) {
+      port->port_def.nBufferCountActual = min;
+      err = gst_omx_port_update_port_definition (port, &port->port_def);
+    }
+
+    if (err != OMX_ErrorNone) {
+      GST_ERROR_OBJECT (self,
+          "Failed to configure %u output buffers: %s (0x%08x)", min,
+          gst_omx_error_to_string (err), err);
+      goto done;
+    }
+    GST_DEBUG_OBJECT (self, "Configured %u output buffers", min);
+  }
+
+  if (!gst_omx_port_is_enabled (port)) {
+    err = gst_omx_port_set_enabled (port, TRUE);
+    if (err != OMX_ErrorNone) {
+      GST_INFO_OBJECT (self,
+          "Failed to enable port: %s (0x%08x)",
+          gst_omx_error_to_string (err), err);
+      goto done;
+    }
+    was_enabled = FALSE;
+  }
+
+  err = gst_omx_port_allocate_buffers (port);
+  if (err != OMX_ErrorNone && min > port->port_def.nBufferCountMin) {
+    GST_ERROR_OBJECT (self,
+        "Failed to allocate required number of buffers %d, trying less and copying",
+        min);
+    min = port->port_def.nBufferCountMin;
+
+    if (!was_enabled)
+      gst_omx_port_set_enabled (port, FALSE);
+
+    if (min != port->port_def.nBufferCountActual) {
+      err = gst_omx_port_update_port_definition (port, NULL);
+      if (err == OMX_ErrorNone) {
+        port->port_def.nBufferCountActual = min;
+        err = gst_omx_port_update_port_definition (port, &port->port_def);
+      }
+
+      if (err != OMX_ErrorNone) {
+        GST_ERROR_OBJECT (self,
+            "Failed to configure %n output buffers: %s (0x%08x)", min,
+            gst_omx_error_to_string (err), err);
+        goto done;
+      }
+    }
+
+    err = gst_omx_port_allocate_buffers (port);
+  }
+
+  if (err != OMX_ErrorNone) {
+    GST_ERROR_OBJECT (self, "Failed to allocate %d buffers: %s (0x%08x)", min,
+        gst_omx_error_to_string (err), err);
+    goto done;
+  }
+
+  if (!was_enabled) {
+    err = gst_omx_port_wait_enabled (port, 2 * GST_SECOND);
+    if (err != OMX_ErrorNone) {
+      GST_ERROR_OBJECT (self,
+          "Failed to wait until port is enabled: %s (0x%08x)",
+          gst_omx_error_to_string (err), err);
+      goto done;
+    }
+  }
+
+  err = OMX_ErrorNone;
+
+done:
+
+  return err;
+}
+
+static OMX_ERRORTYPE
+gst_omx_video_dec_deallocate_output_buffers (GstOMXVideoDec * self)
+{
+  OMX_ERRORTYPE err;
+
+  err = gst_omx_port_deallocate_buffers (self->dec_out_port);
+
+  return err;
+}
+
 static void
 gst_omx_video_dec_loop (GstOMXVideoDec * self)
 {
@@ -595,7 +700,7 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
-      err = gst_omx_port_deallocate_buffers (port);
+      err = gst_omx_video_dec_deallocate_output_buffers (self);
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
@@ -657,8 +762,7 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
     GST_VIDEO_DECODER_STREAM_UNLOCK (self);
 
     if (acq_return == GST_OMX_ACQUIRE_BUFFER_RECONFIGURE) {
-      err = gst_omx_port_allocate_buffers (port);
-
+      err = gst_omx_video_dec_allocate_output_buffers (self);
       if (err != OMX_ErrorNone)
         goto reconfigure_error;
 
@@ -764,7 +868,8 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
           gst_flow_get_name (flow_ret));
     }
 
-    gst_omx_port_release_buffer (port, buf);
+    if (buf)
+      gst_omx_port_release_buffer (port, buf);
 
     self->downstream_flow_ret = flow_ret;
   } else {
@@ -999,7 +1104,7 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
   GstCaps *templ_caps, *peer_caps, *intersection;
   GstVideoFormat format;
   GstStructure *s;
-  guint32 fourcc;;
+  guint32 fourcc;
 
   GST_DEBUG_OBJECT (self, "Trying to negotiate a video format with downstream");
 
@@ -1014,7 +1119,6 @@ gst_omx_video_dec_negotiate (GstOMXVideoDec * self)
   } else {
     intersection = templ_caps;
   }
-
 
   GST_DEBUG_OBJECT (self, "Allowed downstream caps: %" GST_PTR_FORMAT,
       intersection);
