@@ -748,7 +748,6 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
         format, port_def.format.video.nFrameWidth,
         port_def.format.video.nFrameHeight, self->input_state);
 
-#if 0
     /* Take framerate and pixel-aspect-ratio from sinkpad caps */
 
     if (!gst_video_decoder_negotiate (GST_VIDEO_DECODER (self))) {
@@ -757,7 +756,6 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
       gst_video_codec_state_unref (state);
       goto caps_failed;
     }
-#endif
 
     gst_video_codec_state_unref (state);
 
