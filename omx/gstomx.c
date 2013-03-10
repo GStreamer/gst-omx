@@ -490,6 +490,7 @@ EventHandler (OMX_HANDLETYPE hComponent, OMX_PTR pAppData, OMX_EVENTTYPE eEvent,
     case OMX_EventPortFormatDetected:
     case OMX_EventBufferFlag:
     default:
+      GST_DEBUG_OBJECT (comp->parent, "Unknown event 0x%08x", eEvent);
       break;
   }
 
