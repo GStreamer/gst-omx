@@ -664,23 +664,21 @@ gst_omx_video_dec_deallocate_output_buffers (GstOMXVideoDec * self)
 static void
 gst_omx_video_dec_loop (GstOMXVideoDec * self)
 {
-  GstOMXVideoDecClass *klass;
   GstOMXPort *port = self->dec_out_port;
   GstOMXBuffer *buf = NULL;
   GstVideoCodecFrame *frame;
   GstFlowReturn flow_ret = GST_FLOW_OK;
   GstOMXAcquireBufferReturn acq_return;
   GstClockTimeDiff deadline;
-  gboolean is_eos;
   OMX_ERRORTYPE err;
-
-  klass = GST_OMX_VIDEO_DEC_GET_CLASS (self);
 
   acq_return = gst_omx_port_acquire_buffer (port, &buf);
   if (acq_return == GST_OMX_ACQUIRE_BUFFER_ERROR) {
     goto component_error;
   } else if (acq_return == GST_OMX_ACQUIRE_BUFFER_FLUSHING) {
     goto flushing;
+  } else if (acq_return == GST_OMX_ACQUIRE_BUFFER_EOS) {
+    goto eos;
   }
 
   if (!GST_PAD_CAPS (GST_VIDEO_DECODER_SRC_PAD (self)) ||
@@ -793,97 +791,75 @@ gst_omx_video_dec_loop (GstOMXVideoDec * self)
     goto flushing;
   }
 
-  if (buf) {
-    GST_DEBUG_OBJECT (self, "Handling buffer: 0x%08x %lu",
-        buf->omx_buf->nFlags, buf->omx_buf->nTimeStamp);
+  GST_DEBUG_OBJECT (self, "Handling buffer: 0x%08x %lu",
+      buf->omx_buf->nFlags, buf->omx_buf->nTimeStamp);
 
-    GST_VIDEO_DECODER_STREAM_LOCK (self);
-    frame = _find_nearest_frame (self, buf);
+  GST_VIDEO_DECODER_STREAM_LOCK (self);
+  frame = _find_nearest_frame (self, buf);
 
-    is_eos = ! !(buf->omx_buf->nFlags & OMX_BUFFERFLAG_EOS);
+  if (frame
+      && (deadline = gst_video_decoder_get_max_decode_time
+          (GST_VIDEO_DECODER (self), frame)) < 0) {
+    GST_WARNING_OBJECT (self,
+        "Frame is too late, dropping (deadline %" GST_TIME_FORMAT ")",
+        GST_TIME_ARGS (-deadline));
+    flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
+    frame = NULL;
+  } else if (!frame && buf->omx_buf->nFilledLen > 0) {
+    GstBuffer *outbuf;
 
-    if (frame
-        && (deadline = gst_video_decoder_get_max_decode_time
-            (GST_VIDEO_DECODER (self), frame)) < 0) {
-      GST_WARNING_OBJECT (self,
-          "Frame is too late, dropping (deadline %" GST_TIME_FORMAT ")",
-          GST_TIME_ARGS (-deadline));
-      flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
-      frame = NULL;
-    } else if (!frame && buf->omx_buf->nFilledLen > 0) {
-      GstBuffer *outbuf;
+    /* This sometimes happens at EOS or if the input is not properly framed,
+     * let's handle it gracefully by allocating a new buffer for the current
+     * caps and filling it
+     */
 
-      /* This sometimes happens at EOS or if the input is not properly framed,
-       * let's handle it gracefully by allocating a new buffer for the current
-       * caps and filling it
+    GST_ERROR_OBJECT (self, "No corresponding frame found");
+
+    outbuf = gst_video_decoder_alloc_output_buffer (GST_VIDEO_DECODER (self));
+
+    if (!gst_omx_video_dec_fill_buffer (self, buf, outbuf)) {
+      gst_buffer_unref (outbuf);
+      gst_omx_port_release_buffer (port, buf);
+      goto invalid_buffer;
+    }
+
+    flow_ret = gst_pad_push (GST_VIDEO_DECODER_SRC_PAD (self), outbuf);
+  } else if (buf->omx_buf->nFilledLen > 0) {
+    if ((flow_ret =
+            gst_video_decoder_alloc_output_frame (GST_VIDEO_DECODER
+                (self), frame)) == GST_FLOW_OK) {
+      /* FIXME: This currently happens because of a race condition too.
+       * We first need to reconfigure the output port and then the input
+       * port if both need reconfiguration.
        */
-
-      GST_ERROR_OBJECT (self, "No corresponding frame found");
-
-      outbuf = gst_video_decoder_alloc_output_buffer (GST_VIDEO_DECODER (self));
-
-      if (!gst_omx_video_dec_fill_buffer (self, buf, outbuf)) {
-        gst_buffer_unref (outbuf);
+      if (!gst_omx_video_dec_fill_buffer (self, buf, frame->output_buffer)) {
+        gst_buffer_replace (&frame->output_buffer, NULL);
+        flow_ret =
+            gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
+        frame = NULL;
         gst_omx_port_release_buffer (port, buf);
         goto invalid_buffer;
       }
-
-      flow_ret = gst_pad_push (GST_VIDEO_DECODER_SRC_PAD (self), outbuf);
-    } else if (buf->omx_buf->nFilledLen > 0) {
-      if ((flow_ret =
-              gst_video_decoder_alloc_output_frame (GST_VIDEO_DECODER
-                  (self), frame)) == GST_FLOW_OK) {
-        /* FIXME: This currently happens because of a race condition too.
-         * We first need to reconfigure the output port and then the input
-         * port if both need reconfiguration.
-         */
-        if (!gst_omx_video_dec_fill_buffer (self, buf, frame->output_buffer)) {
-          gst_buffer_replace (&frame->output_buffer, NULL);
-          flow_ret =
-              gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
-          frame = NULL;
-          gst_omx_port_release_buffer (port, buf);
-          goto invalid_buffer;
-        }
-        flow_ret =
-            gst_video_decoder_finish_frame (GST_VIDEO_DECODER (self), frame);
-        frame = NULL;
-      }
-    } else if (frame != NULL) {
-      flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
+      flow_ret =
+          gst_video_decoder_finish_frame (GST_VIDEO_DECODER (self), frame);
       frame = NULL;
     }
-
-    GST_DEBUG_OBJECT (self, "Read frame from component");
-
-    if (is_eos || flow_ret == GST_FLOW_UNEXPECTED) {
-      g_mutex_lock (self->drain_lock);
-      if (self->draining) {
-        GST_DEBUG_OBJECT (self, "Drained");
-        self->draining = FALSE;
-        g_cond_broadcast (self->drain_cond);
-      } else if (flow_ret == GST_FLOW_OK) {
-        GST_DEBUG_OBJECT (self, "Component signalled EOS");
-        flow_ret = GST_FLOW_UNEXPECTED;
-      }
-      g_mutex_unlock (self->drain_lock);
-    } else {
-      GST_DEBUG_OBJECT (self, "Finished frame: %s",
-          gst_flow_get_name (flow_ret));
-    }
-
-    if (buf) {
-      err = gst_omx_port_release_buffer (port, buf);
-      if (err != OMX_ErrorNone)
-        goto release_error;
-    }
-
-    self->downstream_flow_ret = flow_ret;
-  } else {
-    g_assert ((klass->cdata.hacks & GST_OMX_HACK_NO_EMPTY_EOS_BUFFER));
-    GST_VIDEO_DECODER_STREAM_LOCK (self);
-    flow_ret = GST_FLOW_UNEXPECTED;
+  } else if (frame != NULL) {
+    flow_ret = gst_video_decoder_drop_frame (GST_VIDEO_DECODER (self), frame);
+    frame = NULL;
   }
+
+  GST_DEBUG_OBJECT (self, "Read frame from component");
+
+  GST_DEBUG_OBJECT (self, "Finished frame: %s", gst_flow_get_name (flow_ret));
+
+  if (buf) {
+    err = gst_omx_port_release_buffer (port, buf);
+    if (err != OMX_ErrorNone)
+      goto release_error;
+  }
+
+  self->downstream_flow_ret = flow_ret;
 
   if (flow_ret != GST_FLOW_OK)
     goto flow_error;
@@ -911,6 +887,29 @@ flushing:
     gst_pad_pause_task (GST_VIDEO_DECODER_SRC_PAD (self));
     self->downstream_flow_ret = GST_FLOW_WRONG_STATE;
     self->started = FALSE;
+    return;
+  }
+
+eos:
+  {
+    g_mutex_lock (self->drain_lock);
+    if (self->draining) {
+      GST_DEBUG_OBJECT (self, "Drained");
+      self->draining = FALSE;
+      g_cond_broadcast (self->drain_cond);
+      flow_ret = GST_FLOW_OK;
+    } else {
+      GST_DEBUG_OBJECT (self, "Component signalled EOS");
+      flow_ret = GST_FLOW_UNEXPECTED;
+    }
+    g_mutex_unlock (self->drain_lock);
+    self->downstream_flow_ret = flow_ret;
+
+    if (flow_ret != GST_FLOW_OK)
+      goto flow_error;
+
+    GST_VIDEO_DECODER_STREAM_UNLOCK (self);
+
     return;
   }
 
