@@ -834,7 +834,6 @@ gst_omx_component_get_state (GstOMXComponent * comp, GstClockTime timeout)
     timeval = &abstimeout;
     GST_DEBUG_OBJECT (comp->parent, "%s Waiting for %ld us", comp->name, add);
   } else {
-    timeval = NULL;
     GST_DEBUG_OBJECT (comp->parent, "%s Waiting for signal", comp->name);
   }
 
@@ -846,7 +845,7 @@ gst_omx_component_get_state (GstOMXComponent * comp, GstClockTime timeout)
     if (!g_queue_is_empty (&comp->messages)) {
       signalled = TRUE;
     }
-    if (timeval == NULL) {
+    if (timeout == GST_CLOCK_TIME_NONE) {
       g_cond_wait (comp->messages_cond, comp->messages_lock);
       signalled = TRUE;
     } else {
@@ -1526,7 +1525,7 @@ gst_omx_port_set_flushing (GstOMXPort * port, GstClockTime timeout,
       if (!g_queue_is_empty (&comp->messages)) {
         signalled = TRUE;
       }
-      if (timeout == -1) {
+      if (timeout == GST_CLOCK_TIME_NONE) {
         g_cond_wait (comp->messages_cond, comp->messages_lock);
         signalled = TRUE;
       } else {
