@@ -529,9 +529,9 @@ eos:
       flow_ret = GST_FLOW_UNEXPECTED;
     }
     g_mutex_unlock (self->drain_lock);
-
     self->downstream_flow_ret = flow_ret;
 
+    /* Here we fallback and pause the task for the EOS case */
     if (flow_ret != GST_FLOW_OK)
       goto flow_error;
 
