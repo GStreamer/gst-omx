@@ -12,6 +12,11 @@ VIDEO_BASE_CLASSES_H = \
 	video/gstvideoencoder.h \
 	video/gstvideoutils.h
 
+if HAVE_VP8
+VP8_C_FILES=gstomxvp8dec.c
+VP8_H_FILES=gstomxvp8dec.h
+endif
+
 libgstopenmax_la_SOURCES = \
 	gstomx.c \
 	gstomxvideodec.c \
@@ -21,6 +26,7 @@ libgstopenmax_la_SOURCES = \
 	gstomxmpeg2dec.c \
 	gstomxh264dec.c \
 	gstomxh263dec.c \
+	$(VP8_C_FILES) \
 	gstomxwmvdec.c \
 	gstomxmpeg4videoenc.c \
 	gstomxh264enc.c \
@@ -40,6 +46,7 @@ noinst_HEADERS = \
 	gstomxmpeg4videodec.h \
 	gstomxh264dec.h \
 	gstomxh263dec.h \
+	$(VP8_H_FILES) \
 	gstomxwmvdec.h \
 	gstomxmpeg4videoenc.h \
 	gstomxh264enc.h \
