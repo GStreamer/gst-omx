@@ -1591,9 +1591,16 @@ gst_omx_video_dec_handle_frame (GstVideoDecoder * decoder,
       }
 
       buf->omx_buf->nFlags |= OMX_BUFFERFLAG_CODECCONFIG;
+      buf->omx_buf->nFlags |= OMX_BUFFERFLAG_ENDOFFRAME;
       buf->omx_buf->nFilledLen = GST_BUFFER_SIZE (codec_data);
       memcpy (buf->omx_buf->pBuffer + buf->omx_buf->nOffset,
           GST_BUFFER_DATA (codec_data), buf->omx_buf->nFilledLen);
+      if (GST_CLOCK_TIME_IS_VALID (timestamp))
+        buf->omx_buf->nTimeStamp =
+            gst_util_uint64_scale (timestamp, OMX_TICKS_PER_SECOND, GST_SECOND);
+      else
+        buf->omx_buf->nTimeStamp = 0;
+      buf->omx_buf->nTickCount = 0;
 
       self->started = TRUE;
       err = gst_omx_port_release_buffer (port, buf);
@@ -1645,10 +1652,13 @@ gst_omx_video_dec_handle_frame (GstVideoDecoder * decoder,
     /* TODO: Set flags
      *   - OMX_BUFFERFLAG_DECODEONLY for buffers that are outside
      *     the segment
-     *   - OMX_BUFFERFLAG_ENDOFFRAME for parsed input
      */
 
     offset += buf->omx_buf->nFilledLen;
+
+    if (offset == size)
+      buf->omx_buf->nFlags |= OMX_BUFFERFLAG_ENDOFFRAME;
+
     self->started = TRUE;
     err = gst_omx_port_release_buffer (port, buf);
     if (err != OMX_ErrorNone)
