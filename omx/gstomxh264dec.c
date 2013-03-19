@@ -73,7 +73,9 @@ gst_omx_h264_dec_class_init (GstOMXH264DecClass * klass)
 
   videodec_class->cdata.default_sink_template_caps = "video/x-h264, "
       "parsed=(boolean) true, "
-      "alignment=(string)au, " "stream-format=(string) byte-stream";
+      "alignment=(string) au, "
+      "stream-format=(string) byte-stream, "
+      "width=(int) [1,MAX], " "height=(int) [1,MAX]";
 
   gst_omx_set_default_role (&videodec_class->cdata, "video_decoder.avc");
 }
