@@ -223,6 +223,158 @@ elif test x"$ac_cv_omx_target_struct_packing" != x"none"; then
   AC_DEFINE_UNQUOTED(GST_OMX_STRUCT_PACKING, $ac_cv_omx_target_struct_packing, [The struct packing used for OpenMAX structures])
 fi
 
+dnl *** gst-libs/gst/egl ***
+AC_ARG_WITH([egl-window-system],
+              AS_HELP_STRING([--with-egl-window-system],[EGL window system to use (x11, mali-fb, rpi, none)]),
+              [EGL_WINDOW_SYSTEM="$withval"],
+              [EGL_WINDOW_SYSTEM="auto"])
+
+if test x"$EGL_WINDOW_SYSTEM" = x"auto"; then
+  dnl Mali
+  old_LIBS=$LIBS
+  old_CFLAGS=$CFLAGS
+  LIBS="$LIBS -lUMP $EGL_LIBS"
+  CFLAGS="$CFLAGS $EGL_CFLAGS"
+  AC_CHECK_LIB([Mali], [mali_image_create], [EGL_WINDOW_SYSTEM="mali-fb"], [EGL_WINDOW_SYSTEM="auto"])
+  LIBS=$old_LIBS
+  CFLAGS=$old_CFLAGS
+
+  dnl RPi
+  if test x"$EGL_WINDOW_SYSTEM" = x"auto"; then
+      old_LIBS=$LIBS
+      old_CFLAGS=$CFLAGS
+      LIBS="$LIBS -lvcos -lvchiq_arm"
+      CFLAGS="$CFLAGS"
+      AC_CHECK_LIB([bcm_host], [bcm_host_init],
+        [
+          LIBS="$LIBS -lbcm_host"
+          AC_CHECK_HEADER([bcm_host.h], [EGL_WINDOW_SYSTEM="rpi"], [EGL_WINDOW_SYSTEM="auto"])
+      ])
+      LIBS=$old_LIBS
+      CFLAGS=$old_CFLAGS
+  fi
+
+  if test x"$EGL_WINDOW_SYSTEM" = x"auto"; then
+      if test x"$HAVE_X11" = x"yes"; then
+        EGL_WINDOW_SYSTEM="x11"
+      fi
+  fi
+
+  if test x"$EGL_WINDOW_SYSTEM" = x"auto"; then
+    EGL_WINDOW_SYSTEM="none"
+  fi
+fi
+
+case "$EGL_WINDOW_SYSTEM" in
+  x11|none)
+    PKG_CHECK_MODULES(EGL, egl, HAVE_EGL="yes", [
+      HAVE_EGL="no"
+      old_LIBS=$LIBS
+      old_CFLAGS=$CFLAGS
+      
+      AC_CHECK_LIB([EGL], [eglGetProcAddress],
+        [
+          AC_CHECK_HEADER([EGL/egl.h],
+            [
+              HAVE_EGL="yes"
+              EGL_LIBS="-lEGL"
+              EGL_CFLAGS=""
+            ]
+          )
+        ]
+      )
+      
+      LIBS=$old_LIBS
+      CFLAGS=$old_CFLAGS
+    ])
+      
+    if test x"$HAVE_EGL" = x"yes" -a x"$EGL_WINDOW_SYSTEM" = x"x11"; then
+      if test x"$HAVE_X11" != x"yes"; then
+        AC_MSG_ERROR([libX11 not found and is required for EGL X11 window system])
+      else
+        AC_DEFINE(USE_EGL_X11, [1], [Use X11 EGL window system])
+        EGL_CFLAGS="$EGL_CFLAGS $X11_CFLAGS"
+        EGL_LIBS="$EGL_LIBS $X11_LIBS"
+      fi
+    fi
+    ;;
+  mali-fb)
+    dnl FIXME: Mali EGL depends on GLESv1 or GLESv2
+    HAVE_EGL="no"
+    old_LIBS=$LIBS
+    old_CFLAGS=$CFLAGS
+    AC_CHECK_HEADER([EGL/fbdev_window.h],
+      [
+        LIBS="$LIBS -lUMP"
+        AC_CHECK_LIB([Mali], [mali_image_create],
+          [
+            LIBS="$LIBS -lMali"
+            AC_CHECK_LIB([GLESv2], [glEnable],
+              [
+                AC_CHECK_HEADER([GLES2/gl2.h],
+                  [
+                    AC_CHECK_LIB([EGL], [eglGetProcAddress],
+                      [
+                        AC_CHECK_HEADER([EGL/egl.h],
+                          [
+                            HAVE_EGL="yes"
+                            EGL_LIBS="-lGLESv2 -lEGL -lMali -lUMP"
+                            EGL_CFLAGS=""
+                            AC_DEFINE(USE_EGL_MALI_FB, [1], [Use Mali FB EGL window system])
+                          ])
+                      ])
+                  ])
+              ])
+          ])
+      ])
+    LIBS=$old_LIBS
+    CFLAGS=$old_CFLAGS
+    ;;
+  rpi)
+    old_LIBS=$LIBS
+    old_CFLAGS=$CFLAGS
+
+    dnl FIXME: EGL of RPi depends on GLESv1 or GLESv2
+    dnl FIXME: GLESv2 of RPi depends on EGL... WTF!
+    LIBS="$LIBS -lvcos -lvchiq_arm"
+    AC_CHECK_LIB([bcm_host], [bcm_host_init],
+      [
+        LIBS="$LIBS -lbcm_host"
+        AC_CHECK_HEADER(bcm_host.h,
+          [
+            LIBS="$LIBS -lGLESv2"
+            AC_CHECK_LIB([EGL], [eglGetProcAddress],
+              [
+                LIBS="$LIBS -lEGL"
+                AC_CHECK_HEADER([EGL/egl.h],
+                  [
+                    AC_CHECK_LIB([GLESv2], [glEnable],
+                      [
+                        AC_CHECK_HEADER([GLES2/gl2.h],
+                          [
+                            HAVE_EGL="yes"
+                            EGL_LIBS="-lGLESv2 -lEGL -lbcm_host -lvcos -lvchiq_arm"
+                            EGL_CFLAGS=""
+                            AC_DEFINE(USE_EGL_RPI, [1], [Use RPi EGL window system])
+                        ])
+                    ])
+                ])
+            ])
+        ])
+    ])
+
+    LIBS=$old_LIBS
+    CFLAGS=$old_CFLAGS
+    ;;
+  *)
+    AC_MSG_ERROR([invalid EGL window system specified])
+    ;;
+esac
+
+AC_SUBST(EGL_LIBS)
+AC_SUBST(EGL_CFLAGS)
+AM_CONDITIONAL(HAVE_EGL, test x"$HAVE_EGL" = x"yes")
+
 dnl *** set variables based on configure arguments ***
 
 dnl set license and copyright notice
@@ -345,6 +497,9 @@ dnl *** output files ***
 
 AC_CONFIG_FILES(
 Makefile
+gst/Makefile
+gst/egl/Makefile
+gst/egl/gstreamer-egl-$GST_MAJORMINOR.pc
 omx/Makefile
 common/Makefile
 common/m4/Makefile

@@ -1,4 +1,4 @@
-SUBDIRS = common omx tools config
+SUBDIRS = common gst omx tools config
 
 ACLOCAL_AMFLAGS = -I m4
 
