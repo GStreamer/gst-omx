@@ -79,6 +79,8 @@ libgstopenmax_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 
 EXTRA_DIST = \
   openmax \
+  $(VIDEO_BASE_CLASSES_C) \
+  $(VIDEO_BASE_CLASSES_H) \
   gstomxvp8dec.c \
   gstomxvp8dec.h
 
