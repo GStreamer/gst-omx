@@ -48,6 +48,10 @@
 #include <OMX_Core.h>
 #include <OMX_Component.h>
 
+#ifdef USE_OMX_TARGET_RPI
+#include <OMX_Broadcom.h>
+#endif
+
 #ifdef GST_OMX_STRUCT_PACKING
 #pragma pack()
 #endif
@@ -265,8 +269,8 @@ struct _GstOMXBuffer {
   /* Cookie of the settings when this buffer was allocated */
   gint settings_cookie;
 
-  /* TRUE if this is an EGLImage */
-  gboolean eglimage;
+  /* > -1 if this is an EGLImage */
+  gint eglimage;
 };
 
 struct _GstOMXClassData {

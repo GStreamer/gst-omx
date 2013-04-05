@@ -1069,14 +1069,10 @@ gst_omx_component_setup_tunnel (GstOMXComponent * comp1, GstOMXPort * port1,
   OMX_ERRORTYPE err;
 
   g_return_val_if_fail (comp1 != NULL, OMX_ErrorUndefined);
-  g_return_val_if_fail (comp1->state == OMX_StateLoaded
-      || !port1->port_def.bEnabled, OMX_ErrorUndefined);
   g_return_val_if_fail (port1 != NULL, OMX_ErrorUndefined);
   g_return_val_if_fail (port1->port_def.eDir == OMX_DirOutput,
       OMX_ErrorUndefined);
   g_return_val_if_fail (comp2 != NULL, OMX_ErrorUndefined);
-  g_return_val_if_fail (comp2->state == OMX_StateLoaded
-      || !port2->port_def.bEnabled, OMX_ErrorUndefined);
   g_return_val_if_fail (port2 != NULL, OMX_ErrorUndefined);
   g_return_val_if_fail (port2->port_def.eDir == OMX_DirInput,
       OMX_ErrorUndefined);
@@ -1114,14 +1110,10 @@ gst_omx_component_close_tunnel (GstOMXComponent * comp1, GstOMXPort * port1,
   OMX_ERRORTYPE err;
 
   g_return_val_if_fail (comp1 != NULL, OMX_ErrorUndefined);
-  g_return_val_if_fail (comp1->state == OMX_StateLoaded
-      || !port1->port_def.bEnabled, OMX_ErrorUndefined);
   g_return_val_if_fail (port1 != NULL, OMX_ErrorUndefined);
   g_return_val_if_fail (port1->port_def.eDir == OMX_DirOutput,
       OMX_ErrorUndefined);
   g_return_val_if_fail (comp2 != NULL, OMX_ErrorUndefined);
-  g_return_val_if_fail (comp2->state == OMX_StateLoaded
-      || !port2->port_def.bEnabled, OMX_ErrorUndefined);
   g_return_val_if_fail (port2 != NULL, OMX_ErrorUndefined);
   g_return_val_if_fail (port2->port_def.eDir == OMX_DirInput,
       OMX_ErrorUndefined);
@@ -1611,6 +1603,7 @@ gst_omx_port_allocate_buffers_unlocked (GstOMXPort * port,
   OMX_ERRORTYPE err = OMX_ErrorNone;
   gint i;
   const GList *l;
+  gint eglimage = 0;
 
   g_assert (!port->buffers || port->buffers->len == 0);
 
@@ -1661,17 +1654,18 @@ gst_omx_port_allocate_buffers_unlocked (GstOMXPort * port,
       err =
           OMX_UseBuffer (comp->handle, &buf->omx_buf, port->index, buf,
           port->port_def.nBufferSize, l->data);
-      buf->eglimage = FALSE;
+      buf->eglimage = -1;
     } else if (images) {
       err =
           OMX_UseEGLImage (comp->handle, &buf->omx_buf, port->index, buf,
           l->data);
-      buf->eglimage = TRUE;
+      buf->eglimage = eglimage;
+      eglimage++;
     } else {
       err =
           OMX_AllocateBuffer (comp->handle, &buf->omx_buf, port->index, buf,
           port->port_def.nBufferSize);
-      buf->eglimage = FALSE;
+      buf->eglimage = -1;
     }
 
     if (err != OMX_ErrorNone) {

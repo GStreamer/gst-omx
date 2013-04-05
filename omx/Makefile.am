@@ -17,6 +17,10 @@ VP8_C_FILES=gstomxvp8dec.c
 VP8_H_FILES=gstomxvp8dec.h
 endif
 
+if HAVE_EGL
+GST_EGL_LIBS = $(top_builddir)/gst/egl/libgstegl-$(GST_MAJORMINOR).la
+endif
+
 libgstopenmax_la_SOURCES = \
 	gstomx.c \
 	gstomxvideodec.c \
@@ -73,7 +77,8 @@ libgstopenmax_la_LIBADD = \
 	-lgstpbutils-@GST_MAJORMINOR@ \
 	-lgstvideo-@GST_MAJORMINOR@ \
 	$(GST_BASE_LIBS) \
-	$(GST_LIBS)
+	$(GST_LIBS) \
+	$(GST_EGL_LIBS)
 
 libgstopenmax_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 

@@ -27,6 +27,24 @@
 
 #include <gst/gst.h>
 
+#if defined(USE_EGL_RPI)
+#if defined (__GNUC__)
+#ifndef __VCCOREVER__
+#define __VCCOREVER__ 0x04000000
+#endif
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+#pragma GCC optimize ("gnu89-inline")
+#endif
+
+#include <gst/egl/egl.h>
+
+#if defined (__GNUC__)
+#pragma GCC reset_options
+#pragma GCC diagnostic pop
+#endif
+#endif /* defined(USE_EGL_RPI) */
+
 #ifdef HAVE_VIDEO_BASE_CLASSES
 #include <gst/video/gstvideodecoder.h>
 #else
@@ -80,6 +98,18 @@ struct _GstOMXVideoDec
   gboolean eos;
 
   GstFlowReturn downstream_flow_ret;
+
+#ifdef USE_EGL_RPI
+  gboolean egl_transport_allowed;
+  gboolean egl_transport_active;
+
+  GstEGLDisplay * egl_display;
+
+  GstOMXComponent *egl_render;
+  GstOMXPort *egl_in_port, *egl_out_port;
+  
+  GstEGLImageMemoryPool * out_port_pool;
+#endif
 };
 
 struct _GstOMXVideoDecClass
