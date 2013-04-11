@@ -507,6 +507,8 @@ tools/Makefile
 config/Makefile
 config/bellagio/Makefile
 config/rpi/Makefile
+examples/Makefile
+examples/egl/Makefile
 )
 
 AC_OUTPUT
