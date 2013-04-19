@@ -767,7 +767,12 @@ handle_queued_objects (APP_STATE_T * state)
 
     if (GST_IS_BUFFER (object)) {
       GstBuffer *buffer = GST_BUFFER_CAST (object);
-      update_image (state, buffer);
+      if (GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_PREROLL)) {
+        g_print ("got a reclaim buffer\n");
+        flush_internal (state);
+      } else {
+        update_image (state, buffer);
+      }
       gst_buffer_unref (buffer);
     } else if (GST_IS_MESSAGE (object)) {
       GstMessage *message = GST_MESSAGE_CAST (object);

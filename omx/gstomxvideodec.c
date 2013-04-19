@@ -1451,6 +1451,14 @@ eos:
   {
     g_mutex_lock (self->drain_lock);
     if (self->draining) {
+#ifdef USE_EGL_RPI
+      if (self->egl_transport_active) {
+        GstBuffer *reclaim = gst_buffer_new ();
+        GST_BUFFER_FLAG_SET (reclaim, GST_BUFFER_FLAG_PREROLL);
+        GST_DEBUG_OBJECT (self, "pushing a reclaim buffer");
+        flow_ret = gst_pad_push (GST_VIDEO_DECODER_SRC_PAD (self), reclaim);
+      }
+#endif
       GST_DEBUG_OBJECT (self, "Drained");
       self->draining = FALSE;
       g_cond_broadcast (self->drain_cond);
@@ -1929,80 +1937,68 @@ gst_omx_video_dec_set_format (GstVideoDecoder * decoder,
     } else {
 #ifdef USE_EGL_RPI
       if (self->egl_transport_active) {
+        gst_omx_port_set_flushing (self->dec_in_port, 5 * GST_SECOND, TRUE);
+        gst_omx_port_set_flushing (self->dec_out_port, 5 * GST_SECOND, TRUE);
+        gst_omx_port_set_flushing (self->egl_in_port, 5 * GST_SECOND, TRUE);
+        gst_omx_port_set_flushing (self->egl_out_port, 5 * GST_SECOND, TRUE);
+      }
+#endif
+
+      if (gst_omx_port_set_enabled (self->dec_in_port, FALSE) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_port_set_enabled (out_port, FALSE) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_port_wait_buffers_released (self->dec_in_port,
+              5 * GST_SECOND) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_port_wait_buffers_released (out_port,
+              1 * GST_SECOND) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_port_deallocate_buffers (self->dec_in_port) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_video_dec_deallocate_output_buffers (self) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_port_wait_enabled (self->dec_in_port,
+              1 * GST_SECOND) != OMX_ErrorNone)
+        return FALSE;
+      if (gst_omx_port_wait_enabled (out_port, 1 * GST_SECOND) != OMX_ErrorNone)
+        return FALSE;
+
+#ifdef USE_EGL_RPI
+      if (self->egl_transport_active) {
         OMX_STATETYPE egl_state;
 
-        if (gst_omx_port_set_enabled (self->dec_in_port,
-                FALSE) != OMX_ErrorNone)
-          return FALSE;
-
-        if (gst_omx_port_set_enabled (self->dec_out_port,
-                FALSE) != OMX_ErrorNone)
-          return FALSE;
-
-        if (gst_omx_port_wait_buffers_released (self->dec_in_port,
-                5 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-
-        if (gst_omx_port_wait_buffers_released (self->dec_out_port,
-                5 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-
-        if (gst_omx_port_deallocate_buffers (self->dec_in_port) !=
-            OMX_ErrorNone)
-          return FALSE;
-
-        if (gst_omx_port_wait_enabled (self->dec_in_port,
-                1 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-
-        if (gst_omx_port_wait_enabled (self->dec_out_port,
-                1 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-
+        GST_DEBUG_OBJECT (self, "deactivating EGL transport");
         egl_state = gst_omx_component_get_state (self->egl_render, 0);
         if (egl_state > OMX_StateLoaded || egl_state == OMX_StateInvalid) {
+
           if (egl_state > OMX_StateIdle) {
             gst_omx_component_set_state (self->egl_render, OMX_StateIdle);
-            gst_omx_component_get_state (self->egl_render, 5 * GST_SECOND);
+            gst_omx_component_set_state (self->dec, OMX_StateIdle);
+            egl_state = gst_omx_component_get_state (self->egl_render,
+                5 * GST_SECOND);
+            gst_omx_component_get_state (self->dec, 1 * GST_SECOND);
           }
           gst_omx_component_set_state (self->egl_render, OMX_StateLoaded);
+          gst_omx_component_set_state (self->dec, OMX_StateLoaded);
 
-          gst_omx_video_dec_deallocate_output_buffers (self);
           gst_omx_component_close_tunnel (self->dec, self->dec_out_port,
               self->egl_render, self->egl_in_port);
 
           if (egl_state > OMX_StateLoaded) {
             gst_omx_component_get_state (self->egl_render, 5 * GST_SECOND);
           }
+
+          gst_omx_component_set_state (self->dec, OMX_StateIdle);
+
+          gst_omx_component_set_state (self->dec, OMX_StateExecuting);
+          gst_omx_component_get_state (self->dec, GST_CLOCK_TIME_NONE);
         }
         self->egl_transport_active = FALSE;
-      } else {
-#else
-      {
-        if (gst_omx_port_set_enabled (self->dec_in_port,
-                FALSE) != OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_port_set_enabled (out_port, FALSE) != OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_port_wait_buffers_released (self->dec_in_port,
-                5 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_port_wait_buffers_released (out_port,
-                1 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_port_deallocate_buffers (self->dec_in_port) !=
-            OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_video_dec_deallocate_output_buffers (self) != OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_port_wait_enabled (self->dec_in_port,
-                1 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-        if (gst_omx_port_wait_enabled (out_port,
-                1 * GST_SECOND) != OMX_ErrorNone)
-          return FALSE;
-#endif
+        GST_DEBUG_OBJECT (self, "EGL transport deactivated");
       }
+#endif
+
     }
     if (self->input_state)
       gst_video_codec_state_unref (self->input_state);
