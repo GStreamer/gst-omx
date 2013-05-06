@@ -168,6 +168,12 @@ typedef enum {
   GST_OMX_MESSAGE_BUFFER_DONE,
 } GstOMXMessageType;
 
+typedef enum {
+  GST_OMX_COMPONENT_TYPE_SINK,
+  GST_OMX_COMPONENT_TYPE_SOURCE,
+  GST_OMX_COMPONENT_TYPE_FILTER
+} GstOmxComponentType;
+
 struct _GstOMXMessage {
   GstOMXMessageType type;
 
@@ -284,6 +290,8 @@ struct _GstOMXClassData {
   guint32 in_port_index, out_port_index;
 
   guint64 hacks;
+
+  GstOmxComponentType type;
 };
 
 GKeyFile *        gst_omx_get_configuration (void);
