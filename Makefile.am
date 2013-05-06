@@ -4,7 +4,7 @@ SUBDIRS = common gst omx tools config
 # SUBDIRS += examples
 # endif
 
-ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4 -I common/m4
 
 DISTCLEANFILES = _stdint.h
 
