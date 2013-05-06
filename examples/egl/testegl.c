@@ -680,7 +680,7 @@ flush_start (APP_STATE_T * state)
   g_cond_broadcast (state->cond);
   g_mutex_unlock (state->lock);
 
-  while ((object = g_async_queue_try_pop (state->queue))) {
+  while ((object = GST_MINI_OBJECT_CAST (g_async_queue_try_pop (state->queue)))) {
     gst_mini_object_unref (object);
   }
 
@@ -753,7 +753,7 @@ handle_queued_objects (APP_STATE_T * state)
     return FALSE;
   }
 
-  while ((object = g_async_queue_try_pop (state->queue))) {
+  while ((object = GST_MINI_OBJECT_CAST (g_async_queue_try_pop (state->queue)))) {
 
     g_mutex_lock (state->lock);
     if (state->flushing) {
@@ -1179,6 +1179,15 @@ close_ogl (void)
 
 //==============================================================================
 
+static void
+terminate_display (gpointer user_data)
+{
+  APP_STATE_T *state = (APP_STATE_T *) user_data;
+
+  if (state->display != EGL_NO_DISPLAY)
+    eglTerminate (state->display);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -1230,7 +1239,8 @@ main (int argc, char **argv)
   TRACE_VC_MEMORY ("after init_ogl");
 
   /* Wrap the EGL display */
-  state->gst_display = gst_egl_display_new (state->display);
+  state->gst_display = gst_egl_display_new (state->display, state,
+      terminate_display);
 
   /* Setup the model world */
   init_model_proj (state);

@@ -69,7 +69,8 @@ GstBuffer *gst_egl_image_memory_pool_acquire_buffer (GstEGLImageMemoryPool *
     pool, gint idx, gpointer user_data, GDestroyNotify destroy_data);
 
 /* EGLDisplay wrapper with refcount, connection is closed after last ref is gone */
-GstEGLDisplay *gst_egl_display_new (EGLDisplay display);
+GstEGLDisplay * gst_egl_display_new (EGLDisplay display, gpointer user_data,
+    GDestroyNotify destroy_data);
 GstEGLDisplay *gst_egl_display_ref (GstEGLDisplay * display);
 void gst_egl_display_unref (GstEGLDisplay * display);
 EGLDisplay gst_egl_display_get (GstEGLDisplay * display);

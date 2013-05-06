@@ -128,7 +128,9 @@ struct _GstEGLDisplay
   volatile gint refcount;
 
   EGLDisplay display;
-  EGLContext context;
+
+  gpointer user_data;
+  GDestroyNotify destroy_data;
 };
 
 /**
@@ -521,6 +523,8 @@ G_DEFINE_BOXED_TYPE (GstEGLImageMemoryPool, gst_egl_image_memory_pool,
 /**
  * gst_egl_display_new:
  * @display: a #EGLDisplay display
+ * @user_data: user data passed to the callback
+ * @destroy_data: #GDestroyNotify for user_data
  *
  * Create a new #GstEGLDisplay that wraps and refcount @display.
  *
@@ -528,13 +532,16 @@ G_DEFINE_BOXED_TYPE (GstEGLImageMemoryPool, gst_egl_image_memory_pool,
  *
  */
 GstEGLDisplay *
-gst_egl_display_new (EGLDisplay display)
+gst_egl_display_new (EGLDisplay display, gpointer user_data,
+    GDestroyNotify destroy_data)
 {
   GstEGLDisplay *gdisplay;
 
   gdisplay = g_slice_new (GstEGLDisplay);
-  gdisplay->display = display;
   gdisplay->refcount = 1;
+  gdisplay->display = display;
+  gdisplay->user_data = user_data;
+  gdisplay->destroy_data = destroy_data;
 
   return gdisplay;
 }
@@ -560,8 +567,8 @@ gst_egl_display_ref (GstEGLDisplay * display)
  * gst_egl_display_unref:
  * @display: a #GstEGLDisplay
  *
- * Decrease the refcount of @display and when the refcount
- * is 0 terminates the wrapped EGL display.
+ * Decrease the refcount of @display and calls provided destroy function on
+ * last reference.
  *
  */
 void
@@ -570,8 +577,9 @@ gst_egl_display_unref (GstEGLDisplay * display)
   g_return_if_fail (display != NULL);
 
   if (g_atomic_int_dec_and_test (&display->refcount)) {
-    if (display->display != EGL_NO_DISPLAY)
-      eglTerminate (display->display);
+    if (display->destroy_data) {
+      display->destroy_data (display->user_data);
+    }
     g_slice_free (GstEGLDisplay, display);
   }
 }
