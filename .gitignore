@@ -35,6 +35,8 @@ gst-omx-*.tar*
 *.orig
 *.rej
 tools/listcomponents
+examples/egl/testegl
+gst/egl/gstreamer-egl-0.10.pc
 /m4
 Makefile.in
 Makefile
