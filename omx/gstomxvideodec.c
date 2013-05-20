@@ -1472,6 +1472,8 @@ eos:
       flow_ret = GST_FLOW_UNEXPECTED;
     }
     g_mutex_unlock (self->drain_lock);
+
+    GST_VIDEO_DECODER_STREAM_LOCK (self);
     self->downstream_flow_ret = flow_ret;
 
     /* Here we fallback and pause the task for the EOS case */
