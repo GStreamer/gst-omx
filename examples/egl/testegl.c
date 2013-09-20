@@ -63,7 +63,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <GLES/glext.h>
 
 #include <gst/gst.h>
-#include <gst/app/gstappsink.h>
 
 #ifdef USE_EGL_RPI
 #define EGL_EGLEXT_PROTOTYPES
