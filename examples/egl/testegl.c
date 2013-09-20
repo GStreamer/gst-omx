@@ -126,7 +126,6 @@ typedef struct
   uint32_t screen_width;
   uint32_t screen_height;
   gboolean animate;
-  gboolean sync_animation_with_video;
 
   /* OpenGL|ES objects */
   EGLDisplay display;
@@ -162,6 +161,9 @@ typedef struct
 
   /* GLib mainloop */
   GMainLoop *main_loop;
+
+  /* Rendering thread state */
+  gboolean running;
 } APP_STATE_T;
 
 static void init_ogl (APP_STATE_T * state);
@@ -618,14 +620,14 @@ failed:
   return NULL;
 }
 
-static gboolean
+static void
 render_scene (APP_STATE_T * state)
 {
   update_model (state);
   redraw_scene (state);
   TRACE_VC_MEMORY_ONCE_FOR_ID ("after render_scene", gid2);
 
-  return !state->sync_animation_with_video;
+  return;
 }
 
 static void
@@ -646,9 +648,7 @@ update_image (APP_STATE_T * state, GstBuffer * buffer)
       gst_egl_image_memory_get_image (mem));
   TRACE_VC_MEMORY_ONCE_FOR_ID ("after glEGLImageTargetTexture2DOES", gid1);
 
-  if (state->sync_animation_with_video) {
-    render_scene (state);
-  }
+  render_scene (state);
 }
 
 static void
@@ -658,6 +658,23 @@ init_intercom (APP_STATE_T * state)
       g_async_queue_new_full ((GDestroyNotify) gst_mini_object_unref);
   state->lock = g_mutex_new ();
   state->cond = g_cond_new ();
+}
+
+static void
+terminate_intercom (APP_STATE_T * state)
+{
+  /* Release intercom */
+  if (state->queue) {
+    g_async_queue_unref (state->queue);
+  }
+
+  if (state->lock) {
+    g_mutex_free (state->lock);
+  }
+
+  if (state->cond) {
+    g_cond_free (state->cond);
+  }
 }
 
 static void
@@ -832,12 +849,6 @@ queue_object (APP_STATE_T * state, GstMiniObject * obj, gboolean synchronous)
 
   g_async_queue_push (state->queue, obj);
 
-
-  if (state->sync_animation_with_video) {
-    g_idle_add_full (G_PRIORITY_HIGH_IDLE, (GSourceFunc) handle_queued_objects,
-        state, NULL);
-  }
-
   if (synchronous) {
     /* Waiting for object to be handled */
     do {
@@ -847,13 +858,6 @@ queue_object (APP_STATE_T * state, GstMiniObject * obj, gboolean synchronous)
   g_mutex_unlock (state->lock);
 
   return TRUE;
-}
-
-static gboolean
-handle_msgs_and_render_scene (APP_STATE_T * state)
-{
-  handle_queued_objects (state);
-  return render_scene (state);
 }
 
 static void
@@ -1056,18 +1060,6 @@ handle_keyboard (GIOChannel * source, GIOCondition cond, APP_STATE_T * state)
         flush_start (state);
         gst_element_set_state (state->pipeline, GST_STATE_READY);
         break;
-      case 'S':
-        if (state->sync_animation_with_video) {
-          state->sync_animation_with_video = FALSE;
-          /* Add the rendering task */
-          g_idle_add_full (G_PRIORITY_HIGH_IDLE,
-              (GSourceFunc) handle_msgs_and_render_scene, state, NULL);
-          g_print ("\nanimation is not synchoronized with video\n");
-        } else {
-          state->sync_animation_with_video = TRUE;
-          g_print ("\nanimation is synchoronized with video\n");
-        }
-        break;
     }
   }
   g_free (str);
@@ -1178,6 +1170,46 @@ terminate_display (gpointer user_data)
     eglTerminate (state->display);
 }
 
+static void
+open_ogl (void)
+{
+#ifdef USE_EGL_RPI
+  bcm_host_init ();
+  TRACE_VC_MEMORY ("after bcm_host_init");
+#endif
+
+  /* Start OpenGLES */
+  init_ogl (state);
+  TRACE_VC_MEMORY ("after init_ogl");
+
+  /* Wrap the EGL display */
+  state->gst_display = gst_egl_display_new (state->display, state,
+      terminate_display);
+
+  /* Setup the model world */
+  init_model_proj (state);
+  TRACE_VC_MEMORY ("after init_model_proj");
+
+  /* initialize the OGLES texture(s) */
+  init_textures (state);
+  TRACE_VC_MEMORY ("after init_textures");
+}
+
+static gpointer
+render_func (gpointer data)
+{
+  open_ogl ();
+  state->running = TRUE;
+
+  do {
+    handle_queued_objects (state);
+    g_usleep (0);
+  } while (state->running == TRUE);
+
+  close_ogl ();
+  return NULL;
+}
+
 int
 main (int argc, char **argv)
 {
@@ -1189,11 +1221,11 @@ main (int argc, char **argv)
   GOptionEntry options[] = {
     {NULL}
   };
+  GThread *rthread;
 
   /* Clear application state */
   memset (state, 0, sizeof (*state));
   state->animate = TRUE;
-  state->sync_animation_with_video = TRUE;
 
   /* must initialise the threading system before using any other GLib funtion */
   if (!g_thread_supported ())
@@ -1216,32 +1248,18 @@ main (int argc, char **argv)
   /* Initialize GStreamer */
   gst_init (&argc, &argv);
 
-  TRACE_VC_MEMORY ("state 0");
-
-#ifdef USE_EGL_RPI
-  bcm_host_init ();
-  TRACE_VC_MEMORY ("after bcm_host_init");
-#endif
-
-
-  /* Start OpenGLES */
-  init_ogl (state);
-  TRACE_VC_MEMORY ("after init_ogl");
-
-  /* Wrap the EGL display */
-  state->gst_display = gst_egl_display_new (state->display, state,
-      terminate_display);
-
-  /* Setup the model world */
-  init_model_proj (state);
-  TRACE_VC_MEMORY ("after init_model_proj");
-
-  /* initialize the OGLES texture(s) */
-  init_textures (state);
-  TRACE_VC_MEMORY ("after init_textures");
-
   /* initialize inter thread comunnication */
   init_intercom (state);
+
+  TRACE_VC_MEMORY ("state 0");
+
+  if ((rthread =
+          g_thread_create ((GThreadFunc) render_func, NULL, TRUE,
+              &err)) == NULL) {
+    g_print ("Render thread create failed: %s\n", GST_STR_NULL (err->message));
+    g_error_free (err);
+    exit (1);
+  }
 
   /* Initialize player */
   if (gst_uri_is_valid (argv[1])) {
@@ -1269,15 +1287,8 @@ main (int argc, char **argv)
       "  l - Query position/duration\n"
       "  f - Seek 30 seconds forward \n"
       "  b - Seek 30 seconds backward \n"
-      "  S - Toggle synchronization of video and animation \n"
       "  q - Quit \n");
   /* *INDENT-ON* */
-
-  if (!state->sync_animation_with_video) {
-    /* Add the rendering task */
-    g_idle_add_full (G_PRIORITY_HIGH_IDLE,
-        (GSourceFunc) handle_msgs_and_render_scene, state, NULL);
-  }
 
   /* Connect the bus handlers */
   bus = gst_element_get_bus (state->pipeline);
@@ -1310,25 +1321,16 @@ done:
     gst_object_unref (state->pipeline);
   }
 
-  /* Release intercom */
-  if (state->queue) {
-    g_async_queue_unref (state->queue);
-  }
-
-  if (state->lock) {
-    g_mutex_free (state->lock);
-  }
-
-  if (state->cond) {
-    g_cond_free (state->cond);
-  }
-
   /* Unref the mainloop */
   if (state->main_loop) {
     g_main_loop_unref (state->main_loop);
   }
 
-  close_ogl ();
+  /* Stop rendering thread */
+  state->running = FALSE;
+  g_thread_join (rthread);
+
+  terminate_intercom (state);
 
   TRACE_VC_MEMORY ("at exit");
   return 0;
