@@ -787,13 +787,11 @@ handle_queued_objects (APP_STATE_T * state)
   GstMiniObject *object = NULL;
   gboolean done = FALSE;
 
-  if (g_async_queue_length (state->queue) == 0) {
-    return FALSE;
-  }
-
   g_mutex_lock (state->queue_lock);
   if (state->flushing) {
     g_cond_broadcast (state->cond);
+    done = TRUE;
+  } else if (g_async_queue_length (state->queue) == 0) {
     done = TRUE;
   }
   g_mutex_unlock (state->queue_lock);
@@ -857,6 +855,8 @@ handle_queued_objects (APP_STATE_T * state)
     state->popped_obj = object;
     g_cond_broadcast (state->cond);
     g_mutex_unlock (state->queue_lock);
+    g_mutex_lock (state->flow_lock);
+    g_mutex_unlock (state->flow_lock);
   }
 
   return FALSE;
@@ -874,16 +874,16 @@ queue_object (APP_STATE_T * state, GstMiniObject * obj, gboolean synchronous)
     goto beach;
   }
 
+  g_mutex_lock (state->queue_lock);
   g_async_queue_push (state->queue, obj);
 
   if (synchronous) {
     /* Waiting for object to be handled */
-    g_mutex_lock (state->queue_lock);
     do {
       g_cond_wait (state->cond, state->queue_lock);
     } while (!state->flushing && state->popped_obj != obj);
-    g_mutex_unlock (state->queue_lock);
   }
+  g_mutex_unlock (state->queue_lock);
 
 beach:
   g_mutex_unlock (state->flow_lock);
@@ -903,7 +903,10 @@ buffers_cb (GstElement * fakesink, GstBuffer * buffer, GstPad * pad,
     gpointer user_data)
 {
   APP_STATE_T *state = (APP_STATE_T *) user_data;
-  queue_object (state, GST_MINI_OBJECT_CAST (gst_buffer_ref (buffer)), TRUE);
+  gboolean is_reclaim =
+      GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_PREROLL);
+  queue_object (state, GST_MINI_OBJECT_CAST (gst_buffer_ref (buffer)),
+      !is_reclaim);
 }
 
 static gboolean
@@ -919,7 +922,7 @@ events_cb (GstPad * pad, GstEvent * event, gpointer user_data)
       flush_stop (state);
       break;
     case GST_EVENT_EOS:
-      queue_object (state, GST_MINI_OBJECT_CAST (gst_event_ref (event)), TRUE);
+      queue_object (state, GST_MINI_OBJECT_CAST (gst_event_ref (event)), FALSE);
       break;
     default:
       break;
@@ -1149,7 +1152,6 @@ eos_cb (GstBus * bus, GstMessage * msg, APP_STATE_T * state)
 {
   if (GST_MESSAGE_SRC (msg) == GST_OBJECT (state->pipeline)) {
     g_print ("End-Of-Stream reached.\n");
-    flush_start (state);
     gst_element_set_state (state->pipeline, GST_STATE_READY);
   }
 }
