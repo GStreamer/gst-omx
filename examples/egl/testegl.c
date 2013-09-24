@@ -946,7 +946,8 @@ init_playbin_player (APP_STATE_T * state, const gchar * uri)
 
   /* Instantiate and configure playbin2 */
   state->pipeline = gst_element_factory_make ("playbin2", "player");
-  g_object_set (state->pipeline, "uri", uri, "video-sink", vsink, NULL);
+  g_object_set (state->pipeline, "uri", uri, "video-sink", vsink,
+      "flags", 0x53, NULL);
 
   state->vsink = gst_object_ref (vsink);
   return TRUE;
