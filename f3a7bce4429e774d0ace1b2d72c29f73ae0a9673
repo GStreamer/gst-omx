@@ -1,0 +1,2 @@
+The RaspberryPi maps NV12 to OMX_COLOR_FormatYUV420PackedSemiPlanar
+when the strides all match up
