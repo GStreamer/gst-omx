@@ -1353,13 +1353,14 @@ gst_omx_video_enc_handle_output_frame (GstOMXVideoEnc * self, GstOMXPort * port,
 
       outbuf = gst_buffer_new_and_alloc (gst_buffer_get_size(frame->output_buffer) + buf->omx_buf->nFilledLen);
 
+      gst_buffer_map (outbuf, &map, GST_MAP_WRITE);
+
       gst_buffer_map (frame->output_buffer, &map_fragment, GST_MAP_READ);
       memcpy(map.data,
              map_fragment.data,
              gst_buffer_get_size(frame->output_buffer));
       gst_buffer_unmap (frame->output_buffer, &map_fragment);
 
-      gst_buffer_map (outbuf, &map, GST_MAP_WRITE);
       memcpy (map.data + gst_buffer_get_size(frame->output_buffer),
           buf->omx_buf->pBuffer + buf->omx_buf->nOffset,
           buf->omx_buf->nFilledLen);
